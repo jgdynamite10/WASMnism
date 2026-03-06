@@ -1,4 +1,4 @@
-# WASMnisum Benchmark Contract
+# WASMnism Benchmark Contract
 
 **Version:** 1.0  
 **Date:** March 5, 2026  
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the measurement contract for the WASMnisum benchmark.
+This document defines the measurement contract for the WASMnism benchmark.
 Any compliant gateway implementation — on any platform — MUST conform to these
 schemas, SLOs, and fairness rules so results are directly comparable.
 
@@ -339,7 +339,7 @@ invalidates the comparison.
 | Same image file | `bench/fixtures/benchmark.jpg` — a 640×480 JPEG, ~80 KB |
 | Same audio file | `bench/fixtures/benchmark.wav` — 5 s, 16 kHz, mono, ~160 KB |
 | Same labels | `["cat", "dog", "bird", "car", "music"]` — 5 labels for all runs |
-| Same nonce | `"wasmnisum-bench-v1"` |
+| Same nonce | `"wasmnism-bench-v1"` |
 
 Fixture files are checked into the repo. Changing them invalidates all
 prior results.

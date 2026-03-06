@@ -1,4 +1,4 @@
-# WASMnisum
+# WASMnism
 
 Portable ClipClap Edge Gateway benchmark — same gateway logic deployed across WASM-first edge platforms (Akamai/Spin, Fastly, Cloudflare Workers) and AWS Lambda, with a decision-grade price-per-performance scorecard.
 
@@ -9,7 +9,7 @@ The **inference service** is based on [ClipClap](https://github.com/akafinch/cli
 ## Project Structure
 
 ```
-WASMnisum/
+WASMnism/
 ├── clipclap/           # Inference service (FastAPI + CLIP/CLAP) — from akafinch/clipclap
 ├── edge-gateway/       # Portable gateway: Rust core + platform adapters
 ├── docs/               # Benchmark contract, execution plan, architecture

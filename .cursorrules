@@ -1,4 +1,4 @@
-# WASMnisum: ClipClap Edge Gateway Benchmark
+# WASMnism: ClipClap Edge Gateway Benchmark
 
 You are building a portable "ClipClap Edge Gateway" deployed across multiple WASM-first edge platforms (Akamai/Spin, Fastly, Cloudflare Workers) and AWS Lambda, producing a decision-grade price-per-performance scorecard for a future blog post.
 

@@ -1,4 +1,4 @@
-# --- WASMnisum: ClipClap Edge Gateway Benchmark ---
+# --- WASMnism: ClipClap Edge Gateway Benchmark ---
 # Security-first: never commit secrets, credentials, or environment-specific data.
 
 .DS_Store
@@ -55,7 +55,7 @@ crash.*.log
 /docs/OPUS_WORK_SUMMARY.md
 
 # --- Blog export (local only) ---
-/wasmnisum-blog.*
+/wasmnism-blog.*
 /*-blog.*
 
 # --- Planning docs (local only) ---
