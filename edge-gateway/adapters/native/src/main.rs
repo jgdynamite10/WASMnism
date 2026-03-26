@@ -20,6 +20,7 @@ use clipclap_gateway_core::{
     hash::image_hash,
     pipeline::{self, ModerationRequest},
     policy::PolicyConfig,
+    toxicity::ToxicityClassifier,
     types::{ClassificationResponse, EchoRequest, GatewayConfig},
 };
 
@@ -33,6 +34,7 @@ struct AppState {
     inference_url: String,
     http_client: reqwest::Client,
     kv: Arc<DashMap<String, Vec<u8>>>,
+    classifier: Option<Arc<ToxicityClassifier>>,
 }
 
 impl AppState {
@@ -105,7 +107,10 @@ fn parse_moderation_request(body: &[u8]) -> Result<ModerationRequest, GatewayErr
 
 async fn handle_health(State(state): State<AppState>) -> Response {
     let rid = state.request_id();
-    json_ok(&handlers::health(&state.config), &rid, &state.config)
+    let health = handlers::health(&state.config);
+    let mut val = serde_json::to_value(&health).unwrap_or_default();
+    val["ml_model_loaded"] = serde_json::json!(state.classifier.is_some());
+    json_ok(&val, &rid, &state.config)
 }
 
 async fn handle_echo(State(state): State<AppState>, body: Bytes) -> Response {
@@ -153,7 +158,8 @@ async fn handle_moderate(State(state): State<AppState>, body: Bytes) -> Response
         Err(err) => return error_resp(&err, &rid, cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, cfg, &rid, None);
+    let cl = state.classifier.as_deref();
+    let resp = pipeline::moderate_policy_only(&mod_req, cfg, &rid, None, cl);
     json_ok(&resp, &rid, cfg)
 }
 
@@ -608,6 +614,32 @@ async fn main() {
         .unwrap_or(3000);
     let static_dir = std::env::var("STATIC_DIR")
         .unwrap_or_else(|_| "/opt/gateway-native/static".into());
+    let model_dir = std::env::var("MODEL_DIR")
+        .unwrap_or_else(|_| "/opt/gateway-native/models".into());
+
+    let classifier = {
+        let nnef_path = format!("{model_dir}/model.nnef.tar");
+        let vocab_path = format!("{model_dir}/vocab.txt");
+        match (std::fs::read(&nnef_path), std::fs::read_to_string(&vocab_path)) {
+            (Ok(model_bytes), Ok(vocab)) => {
+                tracing::info!("Loading ML toxicity model from {nnef_path}...");
+                match ToxicityClassifier::from_nnef_tar(&model_bytes, &vocab) {
+                    Ok(c) => {
+                        tracing::info!("ML toxicity model loaded successfully");
+                        Some(Arc::new(c))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load ML model: {e}");
+                        None
+                    }
+                }
+            }
+            _ => {
+                tracing::info!("No ML model found at {nnef_path}, running without toxicity classifier");
+                None
+            }
+        }
+    };
 
     let state = AppState {
         config: GatewayConfig {
@@ -617,6 +649,7 @@ async fn main() {
         inference_url,
         http_client: reqwest::Client::new(),
         kv: Arc::new(DashMap::new()),
+        classifier,
     };
 
     let cors = CorsLayer::new()
