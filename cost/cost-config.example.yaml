@@ -1,0 +1,44 @@
+# WASMnism Cost Configuration
+# Copy to cost-config.yaml and fill in real values from your platform dashboards.
+# NEVER commit cost-config.yaml (contains account-specific pricing).
+
+# Pricing per platform (USD)
+platforms:
+  spin:
+    request_per_1m: 0.50
+    kv_read_per_1m: 0.50
+    kv_write_per_1m: 1.00
+    bandwidth_per_gb: 0.08
+    notes: "Fermyon Cloud / Akamai Functions pricing"
+
+  fastly:
+    request_per_10k: 0.40
+    kv_read_per_1m: 0.50
+    kv_write_per_1m: 5.00
+    bandwidth_per_gb: 0.08
+    notes: "Fastly Compute pricing"
+
+  workers:
+    request_per_1m: 0.30
+    cpu_per_1m_ms: 0.02
+    kv_read_per_1m: 0.50
+    kv_write_per_1m: 5.00
+    bandwidth_per_gb: 0.00
+    notes: "Cloudflare Workers Standard pricing, bandwidth included"
+
+  lambda:
+    request_per_1m: 0.20
+    compute_per_gb_second: 0.0000133
+    memory_mb: 128
+    dynamodb_read_per_1m: 0.25
+    dynamodb_write_per_1m: 1.25
+    nat_per_hour: 0.045
+    nat_per_gb: 0.045
+    bandwidth_per_gb: 0.09
+    notes: "AWS Lambda ARM64, us-east-1 pricing"
+
+# Benchmark parameters (from actual runs)
+benchmark:
+  avg_response_size_kb: 1.0
+  cache_hit_rate: 0.80
+  avg_compute_ms: 2.5

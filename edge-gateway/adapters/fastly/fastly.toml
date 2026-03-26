@@ -1,0 +1,19 @@
+manifest_version = 3
+name = "clipclap-edge-gateway"
+description = "ClipClap Moderation Gateway — Fastly Compute adapter"
+language = "rust"
+service_id = ""
+
+[local_server]
+
+  [local_server.backends]
+    [local_server.backends.inference]
+      url = "http://127.0.0.1:8000"
+
+  [local_server.config_stores]
+    [local_server.config_stores.gateway_config]
+      contents.inference_url = "http://127.0.0.1:8000"
+      contents.gateway_region = "us-east-1"
+
+  [local_server.kv_stores]
+    [local_server.kv_stores.moderation_cache]

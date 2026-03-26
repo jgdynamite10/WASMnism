@@ -1,0 +1,13 @@
+[package]
+name = "convert-to-nnef"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "convert-to-nnef"
+path = "src/main.rs"
+
+[dependencies]
+tract-onnx = "0.22"
+tract-nnef = "0.22"
+tract-onnx-opl = "0.22"

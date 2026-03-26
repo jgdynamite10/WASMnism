@@ -1,4 +1,4 @@
-# --- WASMnism: ClipClap Edge Gateway Benchmark ---
+# --- WASMnism: AI Prompt Firewall — Edge Moderation Benchmark ---
 # Security-first: never commit secrets, credentials, or environment-specific data.
 
 .DS_Store
@@ -21,12 +21,9 @@
 /cost/cost-config.yaml
 
 # --- Benchmark scripts with environment-specific URLs/IPs ---
-/scripts/run_all_benchmarks.sh
 /bench/run_config.yaml
-!.example
 
 # --- Benchmark results (may contain IPs, account IDs, internal URLs) ---
-/benchmarks/
 /results/
 *.bench.json
 
@@ -40,12 +37,6 @@ crash.log
 crash.*.log
 
 # --- Project context (private - do not commit) ---
-/docs/PROJECT_STATE.local.md
-/docs/PROJECT_STATE.public.md
-/docs/OPERATIONS.local.md
-/docs/OPERATIONS.public.md
-/docs/CONTEXT.local.md
-/docs/ENDPOINTS.local.md
 /docs/*.local.md
 
 # --- Internal planning docs (local only) ---
@@ -62,46 +53,30 @@ crash.*.log
 *.docx
 ~$*
 
-# --- Python (clipclap backend + inference-service) ---
+# --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-*.egg-info/
-.installed.cfg
-*.egg
 venv/
 .venv/
-env/
-ENV/
 
 # --- PyTorch / ML model caches ---
 *.pt
 *.pth
 *.ckpt
 .cache/
-~/.cache/clip/
-~/.cache/huggingface/
-~/.cache/torch/
 
 # --- Node.js ---
 node_modules/
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # --- Rust / WASM build ---
-/target/
 **/target/
 *.wasm
 !**/fixtures/*.wasm
 
 # --- Vite / Build output ---
-**/frontend/dist/
 **/dist/
 *.local
 
@@ -120,8 +95,20 @@ logs/
 .coverage
 htmlcov/
 .pytest_cache/
-.tox/
 
-# --- Clipclap sample data (downloaded on setup) ---
-clipclap/backend/samples/images/
-clipclap/backend/samples/audio/
+# --- Spin build artifacts (generated from frontend/) ---
+edge-gateway/adapters/spin/static/
+edge-gateway/adapters/spin/.spin/
+
+# --- ML model files (large binaries, downloaded/converted locally) ---
+edge-gateway/models/toxicity/*.onnx
+edge-gateway/models/toxicity/*.nnef.tar
+edge-gateway/models/toxicity/vocab.txt
+edge-gateway/models/toxicity/config.json
+
+# --- Archive (legacy material, will be deleted) ---
+_archive/
+
+# --- Spin binary (install via curl, not committed) ---
+/spin
+/spin.sig

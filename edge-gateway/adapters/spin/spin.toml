@@ -1,21 +1,35 @@
 spin_manifest_version = 2
 
 [application]
-name = "clipclap-edge-gateway"
-version = "0.1.0"
-description = "ClipClap Edge Gateway — Spin (Akamai Functions) adapter"
+name = "wasm-prompt-firewall"
+version = "1.0.0"
+description = "AI Prompt Firewall — WASM-Powered Content Moderation at the Edge"
 
 [variables]
 inference_url = { required = true }
 gateway_region = { default = "us-east-1" }
 
+# --- API routes → gateway WASM ---
+
+[[trigger.http]]
+route = "/gateway/..."
+component = "gateway"
+
+[[trigger.http]]
+route = "/api/..."
+component = "gateway"
+
+# --- Frontend → static fileserver (also serves /samples/) ---
+
 [[trigger.http]]
 route = "/..."
-component = "gateway"
+component = "frontend"
 
 [component.gateway]
 source = "../../target/wasm32-wasip1/release/clipclap_gateway_spin.wasm"
 allowed_outbound_hosts = ["{{ inference_url }}"]
+key_value_stores = ["default"]
+files = [{ source = "../../models/toxicity/", destination = "/models/toxicity" }]
 
 [component.gateway.variables]
 inference_url = "{{ inference_url }}"
@@ -23,3 +37,7 @@ gateway_region = "{{ gateway_region }}"
 
 [component.gateway.build]
 command = "cargo build --target wasm32-wasip1 --release --manifest-path ../../Cargo.toml -p clipclap-gateway-spin"
+
+[component.frontend]
+source = "spin_static_fs.wasm"
+files = [{ source = "static/", destination = "/" }]

@@ -1,10 +1,17 @@
-# WASMnism: ClipClap Edge Gateway Benchmark
+# WASMnism: AI Prompt Firewall — Edge Moderation Benchmark
 
-You are building a portable "ClipClap Edge Gateway" deployed across multiple WASM-first edge platforms (Akamai/Spin, Fastly, Cloudflare Workers) and AWS Lambda, producing a decision-grade price-per-performance scorecard for a future blog post.
+You are building a portable AI Prompt Firewall deployed as WebAssembly across multiple edge platforms (Fermyon Cloud/Spin, Fastly Compute, Cloudflare Workers) and AWS Lambda, with an embedded ML toxicity classifier, producing a decision-grade price-per-performance scorecard for a blog post.
+
+## Architecture
+
+- Rust workspace at `edge-gateway/` with shared `core/` logic and per-platform adapters.
+- Core pipeline: normalize → hash → leetspeak expand → prohibited scan → PII → injection → ML toxicity (MiniLMv2 via Tract NNEF) → verdict.
+- Svelte dashboard at `frontend/` — built to static files, served by Spin's fileserver component.
+- ML model (MiniLMv2, 22.7M params, NNEF format) runs inside the WASM sandbox. No external ML calls.
+- Fermyon Cloud is the primary deployment. Live at: https://wasm-prompt-firewall-imjy4pe0.fermyon.app/
 
 ## Hard Requirements
 
-- Split architecture: Edge Gateway (WASM-deployable) + Inference Service (existing FastAPI).
 - Gateway must return identical JSON schema across all platforms for the same inputs.
 - Benchmark runs must be repeatable (N runs, report median).
 - Security is job zero: never commit API keys, secrets, passwords, IP addresses, or credentials.
@@ -12,10 +19,8 @@ You are building a portable "ClipClap Edge Gateway" deployed across multiple WAS
 
 ## Context Rules
 
-- Read docs/PROJECT_STATE.local.md if it exists; otherwise docs/PROJECT_STATE.public.md.
-- Read docs/OPERATIONS.local.md if it exists; otherwise docs/OPERATIONS.public.md.
-- PROJECT_STATE and OPERATIONS files are private—never commit them.
 - Never ask the user to paste tokens, kubeconfigs, API keys, or credentials into chat.
+- PROJECT_STATE and OPERATIONS files are private — never commit them.
 
 ## Security Rules
 
@@ -23,21 +28,22 @@ You are building a portable "ClipClap Edge Gateway" deployed across multiple WAS
 - Use environment variables or secret managers for all sensitive config.
 - Provide .env.example and cost-config.example.yaml with placeholders only.
 - Do not log secrets, credentials, or PII.
-- Benchmark result JSON may contain IPs—keep raw results out of git (use .gitignore).
+- Benchmark result JSON may contain IPs — keep raw results out of git (use .gitignore).
 
 ## Target Platforms
 
-- Tier 1 (edge): Akamai Functions (Spin), Fastly Compute, Cloudflare Workers
-- Tier 2 (baseline): AWS Lambda (regional)
+- Tier 1 (edge): Fermyon Cloud (Spin), Fastly Compute, Cloudflare Workers
+- Tier 2 (baseline): AWS Lambda (regional), Native (Linode)
 
-## Deliverables
+## Project Structure
 
-1. benchmark_contract.md: request/response schemas, SLO, fairness rules
-2. edge-gateway/: core logic + platform adapters (spin, fastly, workers, lambda)
-3. deploy/: scaffolding for each platform (make deploy-<target>)
-4. bench/: k6 scripts, multi-region notes, results → scorecard
-5. cost/: cost per 1M requests at SLO
+- `edge-gateway/` — Rust workspace (core + adapters + tools + models)
+- `frontend/` — Svelte dashboard (build output → `edge-gateway/adapters/spin/static/`)
+- `bench/` — k6 benchmark scripts
+- `deploy/` — Deployment scripts
+- `cost/` — Cost model
+- `docs/` — Benchmark contract, moderation guide
 
 ## Blog Post Alignment
 
-This project will produce a blog post similar to Anchoring GenAI (rag-ray-haystack). Structure: executive summary, narrative hook, disclosure, architecture, measurement contract, benchmark results, reproduce instructions. Use median of 7 runs; client-side timing as source of truth.
+This project will produce a blog post. Structure: executive summary, narrative hook, disclosure, architecture, measurement contract, benchmark results, reproduce instructions. Use median of 7 runs; client-side timing as source of truth.

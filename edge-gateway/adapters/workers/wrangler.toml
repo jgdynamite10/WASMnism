@@ -1,0 +1,14 @@
+name = "clipclap-edge-gateway"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-12-01"
+
+[vars]
+INFERENCE_URL = "https://your-inference-service.example.com"
+GATEWAY_REGION = "us-east-1"
+
+[[kv_namespaces]]
+binding = "MODERATION_CACHE"
+id = "your-kv-namespace-id"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"

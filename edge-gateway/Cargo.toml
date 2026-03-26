@@ -1,3 +1,11 @@
 [workspace]
-members = ["core", "adapters/spin"]
+members = [
+    "core",
+    "adapters/spin",
+    "adapters/fastly",
+    "adapters/workers",
+    "adapters/lambda",
+    "adapters/native",
+]
+exclude = ["tools/convert-to-nnef"]
 resolver = "2"
