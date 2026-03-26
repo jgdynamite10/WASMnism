@@ -2,9 +2,9 @@
 
 **WASM-Powered Content Moderation at the Edge**
 
-A portable AI Prompt Firewall deployed as WebAssembly across multiple edge platforms, with an embedded ML toxicity classifier running entirely inside the WASM runtime. Built to produce a decision-grade price-per-performance scorecard comparing edge compute providers.
+A portable AI Prompt Firewall deployed as WebAssembly across multiple edge platforms, with an embedded ML toxicity classifier running entirely inside the WASM runtime. Built to produce a decision-grade price-per-performance scorecard comparing WASM edge compute providers.
 
-> **Status**: Work in progress. Fermyon Cloud is live. Fastly, Cloudflare, and Lambda deployments are next.
+> **Status**: Work in progress. Fermyon Cloud is live. Akamai Functions, Fastly, Cloudflare, and Lambda deployments are next.
 
 **Live demo**: [wasm-prompt-firewall-imjy4pe0.fermyon.app](https://wasm-prompt-firewall-imjy4pe0.fermyon.app/)
 
@@ -31,17 +31,20 @@ The ML model catches semantically toxic content that keyword rules miss. "You ar
 
 A Svelte SaaS-style dashboard with:
 - Real-time prompt evaluation against the live edge gateway
-- 5-step pipeline visualization with color-coded status
+- Pipeline visualization with color-coded status
 - ML toxicity gauges with threshold markers
 - Timing breakdown (client round-trip, gateway processing, ML inference)
 - Pre-built example prompts spanning safe text, semantic toxicity, injection attacks, PII, and leetspeak evasion
 
 ### Deployments
 
-| Platform | Type | Status |
-|----------|------|--------|
-| **Fermyon Cloud** (Spin) | Edge / WASM | Live |
-| **Linode** (Native Axum) | Baseline | Live |
+| Platform | Status |
+|----------|--------|
+| **Fermyon Cloud** (Spin) | Live |
+| **Akamai Functions** (Spin) | Access requested |
+| **Fastly Compute** | Scaffolded |
+| **Cloudflare Workers** | Scaffolded |
+| **AWS Lambda** | Scaffolded |
 
 ### ML Model Pipeline
 
@@ -54,7 +57,7 @@ A Svelte SaaS-style dashboard with:
 
 - k6 scripts for three benchmark modes (policy-only, cached-hit, full-pipeline)
 - Measurement contract defining schemas, SLOs, and fairness rules
-- Native baseline on Linode for apples-to-apples comparison
+- Multi-region testing from 3 geographic locations
 
 ---
 
@@ -72,7 +75,7 @@ A Svelte SaaS-style dashboard with:
 - [ ] Multi-region k6 runs (median of 7, client-side timing as source of truth)
 - [ ] Cross-platform scorecard: latency percentiles (p50, p95, p99) per mode
 - [ ] Cold start vs warm request analysis
-- [ ] ML inference timing comparison across platforms
+- [ ] ML inference timing comparison across WASM platforms
 
 ### Cost Analysis
 
@@ -117,7 +120,6 @@ The gateway is a single Rust codebase compiled to `wasm32-wasip1`, with thin pla
 | **Fastly Compute** | `edge-gateway/adapters/fastly/` | Scaffolded |
 | **Cloudflare Workers** | `edge-gateway/adapters/workers/` | Scaffolded |
 | **AWS Lambda** | `edge-gateway/adapters/lambda/` | Scaffolded |
-| **Native** (baseline) | `edge-gateway/adapters/native/` | Deployed |
 
 ## Project Structure
 
@@ -126,16 +128,15 @@ WASMnism/
 ├── edge-gateway/           # Rust workspace
 │   ├── core/               #   Shared logic: pipeline, policy, toxicity, tokenizer
 │   ├── adapters/           #   Platform-specific HTTP adapters
-│   │   ├── spin/           #     Fermyon Cloud (primary)
+│   │   ├── spin/           #     Fermyon Cloud + Akamai Functions
 │   │   ├── fastly/         #     Fastly Compute
 │   │   ├── workers/        #     Cloudflare Workers
-│   │   ├── lambda/         #     AWS Lambda
-│   │   └── native/         #     Native binary (benchmark baseline)
+│   │   └── lambda/         #     AWS Lambda
 │   ├── models/toxicity/    #   ML model files (gitignored, built locally)
 │   └── tools/              #   ONNX → NNEF conversion tool
 ├── frontend/               # Svelte dashboard (built → Spin static files)
 ├── bench/                  # k6 benchmark scripts
-├── deploy/                 # Deployment scripts (Linode, k6 runner)
+├── deploy/                 # Deployment scaffolding
 ├── cost/                   # Cost model per 1M requests
 └── docs/                   # Benchmark contract, moderation guide
 ```
@@ -164,16 +165,14 @@ cp -r dist/* ../edge-gateway/adapters/spin/static/
 
 # Run locally
 cd ../edge-gateway/adapters/spin
-SPIN_VARIABLE_INFERENCE_URL="http://your-inference-host:8000" spin up
+spin up
 ```
 
 ### Deploy to Fermyon Cloud
 
 ```bash
 cd edge-gateway/adapters/spin
-spin cloud deploy \
-  --variable inference_url="http://your-inference-host:8000" \
-  --variable gateway_region="us-ord"
+spin cloud deploy
 ```
 
 ## ML Model

@@ -105,6 +105,9 @@ edge-gateway/models/toxicity/*.nnef.tar
 edge-gateway/models/toxicity/vocab.txt
 edge-gateway/models/toxicity/config.json
 
+# --- Native baseline adapter (private, not part of public WASM comparison) ---
+edge-gateway/adapters/native/
+
 # --- Archive (legacy material, will be deleted) ---
 _archive/
 
