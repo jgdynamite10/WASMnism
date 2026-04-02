@@ -273,8 +273,29 @@ fn handle_moderate_cached(req: Request, _params: Params) -> Result<impl IntoResp
     let normalized = clipclap_gateway_core::normalize::normalize_labels(&mod_req.labels);
     let hash = clipclap_gateway_core::hash::content_hash(&normalized, None);
     let cached = kv_get(&hash);
+    let was_miss = cached.is_none();
 
     let resp = pipeline::moderate_cached(&mod_req, cached.as_ref(), &cfg, &rid, None);
+
+    if was_miss {
+        let cv = CachedVerdict::new(
+            hash,
+            clipclap_gateway_core::policy::PolicyResult {
+                verdict: resp.verdict.clone(),
+                flags: vec![],
+                blocked_terms: resp.moderation.blocked_terms.clone(),
+                confidence: resp.moderation.confidence,
+                processing_ms: resp.moderation.processing_ms,
+            },
+            resp.classification.clone(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        );
+        kv_put(&cv.hash, &cv);
+    }
+
     Ok(json_ok(&resp, &rid, &cfg))
 }
 
@@ -334,6 +355,7 @@ async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl Into
         labels: labels.clone(),
         nonce: rid.clone(),
         text: text_field,
+        ml: true,
     };
 
     // --- Pre-moderation (text policy) ---

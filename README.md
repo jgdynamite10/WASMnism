@@ -55,10 +55,11 @@ A Svelte SaaS-style dashboard with:
 
 ### Benchmark Infrastructure
 
-- 5-test k6 suite: cold start, warm light, warm heavy (ML), concurrency ladder, consistency
-- Suite runner (`bench/run-suite.sh`) and scorecard generator (`bench/build-scorecard.py`)
-- Measurement contract v3.0 defining schemas, SLOs, and fairness rules
-- Moderation validation suite (9 scenarios) for correctness before performance testing
+- **Primary suite**: rule-based pipeline benchmarks (what customers deploy) — warm light, warm policy, concurrency ladder
+- **Stretch suite**: embedded ML inference benchmarks (demonstrates limits) — warm heavy, consistency
+- Cold start tests for both modes
+- Suite runner (`bench/run-suite.sh`), scorecard generator, and 7-run median calculator
+- Measurement contract v3.0 with 9-scenario validation suite for correctness
 
 ---
 
@@ -73,11 +74,13 @@ A Svelte SaaS-style dashboard with:
 
 ### Benchmarking
 
-- [x] 5-test k6 benchmark suite (cold start, warm light, warm heavy, concurrency ladder, consistency)
-- [x] Suite runner and scorecard generator
+- [x] Primary benchmark suite (rules-only: warm light, warm policy, concurrency ladder)
+- [x] Stretch benchmark suite (embedded ML: warm heavy, consistency)
+- [x] Cold start tests (rules-only and ML modes)
+- [x] Suite runner, scorecard generator, and 7-run median calculator
+- [x] Fermyon Cloud: validation 9/9, 7-run medians, cold start data
 - [ ] Multi-region k6 runs (3 geographic locations, client-side timing)
 - [ ] Cross-platform scorecard: latency percentiles (p50, p90, p95) per test
-- [ ] ML inference timing comparison across WASM platforms
 
 ### Cost Analysis
 
@@ -93,8 +96,9 @@ A Svelte SaaS-style dashboard with:
 
 ### Potential Improvements
 
-- [ ] Warm-start ML inference optimization (currently ~850ms cold on Fermyon)
+- [ ] ML inference optimization (currently ~890ms warm on Fermyon — expected for 53MB model in WASM)
 - [ ] Additional toxicity categories beyond `toxic` and `severe_toxic`
+- [ ] Quantized model variant for lower-latency ML inference
 - [ ] Raw JSON response toggle in the dashboard
 - [ ] Persistent evaluation history (localStorage)
 
@@ -193,22 +197,36 @@ The model runs entirely inside the WASM sandbox — no external ML service calls
 
 ## Benchmark
 
-Five tests per the [measurement contract](docs/benchmark_contract.md) v3.0:
+See the full [measurement contract](docs/benchmark_contract.md) (v3.1) for schemas, SLOs, and fairness rules.
+
+### Primary Suite — Rule-Based Pipeline (what customers deploy)
 
 | Test | Script | What It Measures |
 |------|--------|-----------------|
-| Cold Start | `cold-start.js` | WASM instantiation + ML model load |
-| Warm Light | `warm-light.js` | Minimal-work latency (health check) |
+| Warm Light | `warm-light.js` | Minimal-work latency (`GET /health`) |
+| Warm Policy | `warm-policy.js` | Full 6-step rule pipeline with text (`ml: false`) |
+| Concurrency Ladder | `concurrency-ladder.js` | Scaling under 1→50 VUs, rules only |
+| Cold Start (rules) | `cold-start.js` | WASM instantiation, no ML model load |
+
+### Stretch Suite — Embedded ML (demonstrates limits)
+
+| Test | Script | What It Measures |
+|------|--------|-----------------|
 | Warm Heavy | `warm-heavy.js` | Full moderation + ML inference |
-| Concurrency Ladder | `concurrency-ladder.js` | Scaling under 1→50 VUs |
-| Consistency | `consistency.js` | Latency jitter over 120s |
+| Consistency (ML) | `consistency.js` | ML latency jitter over 120s |
+| Cold Start (ML) | `cold-start.js` | WASM instantiation + 53MB model deserialization |
+
+The `ml` field in the request body controls whether ML inference runs. Default is `true` for backward compatibility; benchmarks use `ml: false` for the primary suite.
 
 ```bash
-# Run full suite against a platform
+# Primary suite only
 ./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app
 
-# Compare two platforms
-python3 bench/build-scorecard.py results/fermyon/<ts> results/<other>/<ts>
+# Primary + stretch (ML) tests
+./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app --ml
+
+# With cold start tests (~40 min additional)
+./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app --ml --cold
 ```
 
 ## API
@@ -219,11 +237,14 @@ python3 bench/build-scorecard.py results/fermyon/<ts> results/<other>/<ts>
 {
   "labels": ["safe", "unsafe"],
   "nonce": "unique-request-id",
-  "text": "The prompt to evaluate"
+  "text": "The prompt to evaluate",
+  "ml": false
 }
 ```
 
-Response:
+Set `ml: false` for rules-only (recommended for production). Omit or set `ml: true` to include ML toxicity inference.
+
+**Rules-only response** (`ml: false`) — ~3ms:
 
 ```json
 {
@@ -232,11 +253,27 @@ Response:
     "policy_flags": [],
     "confidence": 0.0,
     "blocked_terms": [],
-    "processing_ms": 862.1,
+    "processing_ms": 3.1
+  },
+  "cache": { "hit": false, "hash": "sha256:..." },
+  "gateway": { "platform": "spin", "region": "us-ord", "request_id": "..." }
+}
+```
+
+**With ML response** (`ml: true`) — ~890ms:
+
+```json
+{
+  "verdict": "allow",
+  "moderation": {
+    "policy_flags": [],
+    "confidence": 0.0,
+    "blocked_terms": [],
+    "processing_ms": 890.2,
     "ml_toxicity": {
       "toxic": 0.001,
       "severe_toxic": 0.0001,
-      "inference_ms": 858.9,
+      "inference_ms": 887.0,
       "model": "MiniLMv2-toxic-jigsaw"
     }
   },

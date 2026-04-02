@@ -19,6 +19,12 @@ pub struct ModerationRequest {
     pub nonce: String,
     #[serde(default)]
     pub text: Option<String>,
+    #[serde(default = "default_ml")]
+    pub ml: bool,
+}
+
+fn default_ml() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,8 +140,7 @@ pub fn moderate_policy_only(
 
     let pre = policy::pre_check(&normalized, req.text.as_deref());
 
-    // If rule-based check already blocks, skip ML inference to save compute
-    let (ml_policy, ml_info) = if pre.verdict == Verdict::Block {
+    let (ml_policy, ml_info) = if !req.ml || pre.verdict == Verdict::Block {
         (None, None)
     } else {
         run_ml_toxicity(classifier, req.text.as_deref(), &req.labels)
@@ -442,6 +447,7 @@ mod tests {
             labels: vec!["cat".into(), "dog".into(), "bird".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let resp = moderate_policy_only(&req, &test_config(), "rid-1", None, None);
         assert_eq!(resp.verdict, Verdict::Allow);
@@ -457,6 +463,7 @@ mod tests {
             labels: vec!["kill".into(), "dog".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let resp = moderate_policy_only(&req, &test_config(), "rid-2", None, None);
         assert_eq!(resp.verdict, Verdict::Block);
@@ -469,6 +476,7 @@ mod tests {
             labels: vec!["<script>alert(1)</script>".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let resp = moderate_policy_only(&req, &test_config(), "rid-3", None, None);
         assert_eq!(resp.verdict, Verdict::Block);
@@ -480,6 +488,7 @@ mod tests {
             labels: vec!["cat".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let cached = CachedVerdict::new(
             "sha256:old".into(),
@@ -504,6 +513,7 @@ mod tests {
             labels: vec!["cat".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let resp = moderate_cached(&req, None, &test_config(), "rid-5", None);
         assert!(!resp.cache.hit);
@@ -516,6 +526,7 @@ mod tests {
             labels: vec!["cat".into(), "dog".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let pre = pre_moderate(&req, None);
         assert!(!pre.is_blocked());
@@ -528,6 +539,7 @@ mod tests {
             labels: vec!["<script>alert(1)</script>".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let pre = pre_moderate(&req, None);
         assert!(pre.is_blocked());
@@ -539,6 +551,7 @@ mod tests {
             labels: vec!["cat".into(), "dog".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let pre = pre_moderate(&req, None);
         let classification = crate::handlers::mock_classify(&pre.normalized_labels);
@@ -555,6 +568,7 @@ mod tests {
             labels: vec!["cat".into(), "dog".into()],
             nonce: "test".into(),
             text: None,
+            ml: true,
         };
         let h1 = pre_moderate(&req, None).hash;
         let h2 = pre_moderate(&req, None).hash;

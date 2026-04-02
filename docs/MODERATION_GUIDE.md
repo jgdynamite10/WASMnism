@@ -12,7 +12,7 @@ model.
 
 A user types a prompt intended for a generative AI model. The WASM gateway at
 the edge evaluates it for prohibited content, PII, injection attacks, and
-evasion attempts — all in sub-millisecond gateway processing time.
+evasion attempts — the rule-based pipeline completes in ~3ms (median).
 
 ```
 User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
@@ -33,19 +33,25 @@ Lambda — the scorecard compares overhead across all four.
 
 ## Primary Endpoint
 
-**`POST /gateway/moderate`** — JSON body, text-only moderation (no inference call).
+**`POST /gateway/moderate`** — JSON body, text-only moderation.
 
 ```json
 {
   "labels": ["word1", "word2", "..."],
   "nonce": "<string>",
-  "text": "The full prompt text to evaluate"
+  "text": "The full prompt text to evaluate",
+  "ml": false
 }
 ```
 
-The `labels` field carries individual words from the prompt (for term scanning
-and hashing). The `text` field carries the full prompt string (for PII and
-injection scanning). Both are evaluated.
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `labels` | — | Individual words for term scanning and hashing |
+| `nonce` | — | Client-supplied request identifier |
+| `text` | null | Full prompt for PII, injection, and ML analysis |
+| `ml` | `true` | Set `false` to skip ML inference (recommended for production) |
+
+When `ml` is `false`, the gateway runs only the rule-based pipeline (layers 1–2 below), delivering sub-5ms processing. When `ml` is `true` and `text` is present, the ML toxicity classifier (layer 3) also runs (~890ms additional).
 
 ## Defense Layers
 
@@ -91,14 +97,19 @@ exists in KV, it's returned immediately.
 
 **Core function:** `clipclap_gateway_core::pipeline::moderate_cached()`
 
-### Layer 3: ML Toxicity Classifier
+### Layer 3: ML Toxicity Classifier (opt-in)
 
 **What:** A MiniLMv2 neural network (22.7M parameters) fine-tuned on the
 Jigsaw toxic-comment dataset. Runs entirely inside the WASM sandbox via
 Tract NNEF — no external service calls.
 
-**When:** Only invoked when the `text` field is present and non-empty.
-Skipped for policy-only requests (no text) and cached hits.
+**When:** Only invoked when `ml` is `true` (or omitted) AND `text` is present.
+Skipped when `ml: false`, when `text` is absent/empty, or on cached hits.
+
+> **Production recommendation:** Use `ml: false` for latency-sensitive
+> workloads. The rule-based pipeline catches the vast majority of threats
+> at ~3ms. Reserve `ml: true` for asynchronous review or batch processing
+> where ~890ms latency is acceptable.
 
 **Pipeline:**
 1. WordPiece tokenization (custom Rust tokenizer, 8k vocabulary)
@@ -201,14 +212,14 @@ When implementing a new adapter (Fastly, Workers, Lambda), each must provide:
 ## Pipeline Flow
 
 ```
-1. Parse JSON → extract labels[] + text
+1. Parse JSON → extract labels[], text, ml
 2. pre_check(labels, text) → policy pre-check
    └─ BLOCKS → return Block immediately (no cache, no ML)
 3. kv_get(label_hash) → check verdict cache
    └─ HIT → return cached verdict
-4. If text is present and non-empty:
+4. If ml:true AND text is present and non-empty:
    └─ ML toxicity inference (WordPiece tokenize → Tract forward pass)
-5. Build classification (policy scores + ML scores)
+5. Build classification (policy scores + ML scores if present)
 6. post_check → evaluate classification scores
 7. merge_results(pre + post + ML) → final verdict
 8. Return response with verdict + timing
@@ -265,7 +276,7 @@ against any deployed gateway to prove moderation correctness.
 | S6 | Leetspeak evasion | `block`, `prohibited_term` |
 | S7 | SQL injection | `block`, `injection_attempt` |
 | S8 | Repeat of S1 | `allow`, `cache.hit: true` |
-| S9 | Clean after block | `allow` |
+| S9 | Semantically toxic text (no keywords) | `block` or `review`, `ml_toxicity.toxic ≥ 0.50` |
 
 ### Running Validation
 
@@ -284,35 +295,16 @@ See `docs/benchmark_contract.md` section 9 for full validation contract.
 
 ## Performance Benchmark Suite
 
-Five k6 scripts measure different performance characteristics. Run them
-via the suite runner or individually.
-
-### Tests
-
-| Script | What It Measures | Duration |
-|--------|-----------------|----------|
-| `cold-start.js` | WASM module instantiation + ML model load | ~20 min (10 iterations, 2-min gaps) |
-| `warm-light.js` | Minimal-work latency (`GET /gateway/health`, 10 VUs) | 60s |
-| `warm-heavy.js` | ML inference latency (`POST /gateway/moderate` with text, 5 VUs) | 60s |
-| `concurrency-ladder.js` | Scaling behavior under increasing load (1→50 VUs) | 150s |
-| `consistency.js` | Latency jitter over a sustained run (5 VUs) | 120s |
-
-### Running the Suite
+See [benchmark_contract.md](benchmark_contract.md) for full test definitions,
+SLOs, and fairness rules. Quick reference:
 
 ```bash
-./bench/run-suite.sh <platform> <gateway_url> [--cold]
+# Validation (9 scenarios, must pass before benchmarking)
+./bench/run-validation.sh spin https://wasm-prompt-firewall-imjy4pe0.fermyon.app
 
-# Fermyon:
-./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app
+# Primary suite (rules only) + stretch (ML)
+./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app --ml
 
-# With cold start test:
-./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app --cold
-```
-
-Results are saved to `results/<platform>/<timestamp>/`.
-
-### Building Scorecards
-
-```bash
-python3 bench/build-scorecard.py results/<platform_a>/<ts> results/<platform_b>/<ts> [output.md]
+# With cold start tests (~40 min additional)
+./bench/run-suite.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app --ml --cold
 ```

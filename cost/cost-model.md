@@ -60,22 +60,44 @@ All costs are in USD.
 | Test | Avg Response Size | KV Reads | Compute Weight | Notes |
 |------|------------------|----------|----------------|-------|
 | Warm Light (health) | ~0.2 KB | 0 | Minimal | No ML, no policy |
-| Warm Heavy (ML) | ~1 KB | 0 | ~850ms CPU | ML toxicity inference |
+| Warm Policy (rules) | ~0.7 KB | 0 | ~3ms CPU | Full rule pipeline, `ml: false` |
+| Warm Heavy (ML) | ~1 KB | 0 | ~890ms CPU | ML toxicity inference |
 
 ### Cost per 1M Requests
 
-*To be filled after benchmark runs with actual response sizes and timing data.*
+Fermyon Cloud costs are based on observed benchmark data (March 2026).
+Other platforms to be filled after deployment and benchmarking.
+
+**Fermyon Cloud (Spin) — observed metrics:**
+- Warm-light: avg 52ms round-trip, ~0.2 KB response, ~189 RPS at 10 VUs
+- Warm-policy: avg 562ms round-trip (3.2ms server), ~0.7 KB, ~17 RPS at 10 VUs
+- Warm-heavy: avg 1400ms round-trip (912ms server), ~1 KB, ~3.5 RPS at 5 VUs
 
 | Platform | Test | Requests | Compute | KV | Bandwidth | Total |
 |----------|------|----------|---------|----|-----------| ------|
-| Spin | warm-light | | | N/A | | |
-| Spin | warm-heavy | | | N/A | | |
+| Spin | warm-light | $0.50 | included | N/A | $0.16 | **~$0.66** |
+| Spin | warm-policy | $0.50 | included | N/A | $0.06 | **~$0.56** |
+| Spin | warm-heavy | $0.50 | included | N/A | $0.08 | **~$0.58** |
 | Fastly | warm-light | | | N/A | | |
+| Fastly | warm-policy | | | N/A | | |
 | Fastly | warm-heavy | | | N/A | | |
 | Workers | warm-light | | | N/A | | |
+| Workers | warm-policy | | | N/A | | |
 | Workers | warm-heavy | | | N/A | | |
 | Lambda | warm-light | | | N/A | | |
+| Lambda | warm-policy | | | N/A | | |
 | Lambda | warm-heavy | | | N/A | | |
+
+**Fermyon cost notes:**
+- Request cost: $0.50/1M applies to all test types.
+- Compute: Included in Fermyon Cloud pricing (no per-ms billing).
+  This is a significant advantage for ML-heavy workloads — the ~890ms
+  of CPU time per heavy request incurs no additional compute charge.
+  For rules-only (warm-policy), the ~3ms processing is negligible.
+- Bandwidth: 1M × 0.2 KB = 0.2 GB × $0.08 = $0.016 (light);
+  1M × 0.7 KB = 0.7 GB × $0.08 = $0.056 (policy);
+  1M × 1 KB = 1 GB × $0.08 = $0.08 (heavy).
+- KV: Not used in warm-light, warm-policy, or warm-heavy benchmarks.
 
 ---
 
@@ -84,6 +106,7 @@ All costs are in USD.
 - Pricing is based on public rate cards and may differ from negotiated enterprise contracts.
 - Free tier allocations are NOT included in calculations (we assume production-scale volume).
 - The gateway is self-contained — no external inference calls, so no NAT Gateway costs.
-- Warm-heavy cost is dominated by CPU time (ML inference ~850ms per request).
+- Warm-policy cost is minimal (~3ms CPU per request).
+- Warm-heavy cost is dominated by CPU time (ML inference ~890ms per request).
 - Bandwidth costs use average response size from benchmark measurements.
 - All prices are pay-as-you-go; reserved capacity or committed use discounts are excluded.

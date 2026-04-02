@@ -25,7 +25,6 @@ echo ""
 
 k6 run \
     --env GATEWAY_URL="${GATEWAY_URL}" \
-    --env IMAGE_PATH="${SCRIPT_DIR}/fixtures/benchmark.jpg" \
     "${SCRIPT_DIR}/moderation-validation.js"
 
 EXIT=$?

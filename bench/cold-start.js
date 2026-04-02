@@ -9,6 +9,7 @@ const mlInference = new Trend("cold_ml_inference", true);
 const BASE_URL = __ENV.GATEWAY_URL || "https://wasm-prompt-firewall-imjy4pe0.fermyon.app";
 const COLD_WAIT = parseInt(__ENV.COLD_WAIT || "120");
 const ITERATIONS = parseInt(__ENV.COLD_ITERATIONS || "10");
+const USE_ML = (__ENV.USE_ML || "false") === "true";
 
 export const options = {
   scenarios: {
@@ -16,15 +17,19 @@ export const options = {
       executor: "per-vu-iterations",
       vus: 1,
       iterations: ITERATIONS,
+      maxDuration: `${ITERATIONS * (COLD_WAIT + 30)}s`,
     },
   },
   thresholds: {},
 };
 
+const mode = USE_ML ? "rules+ML" : "rules-only";
+
 const payload = JSON.stringify({
   labels: ["safe", "unsafe"],
   nonce: "cold-start-bench",
   text: "What is the weather like today?",
+  ml: USE_ML,
 });
 const headers = { "Content-Type": "application/json" };
 
@@ -51,9 +56,9 @@ export default function () {
   } catch {}
 
   if (__ITER < ITERATIONS - 1) {
-    console.log(`  Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Waiting ${COLD_WAIT}s for cold eviction...`);
+    console.log(`  [${mode}] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Waiting ${COLD_WAIT}s for cold eviction...`);
     sleep(COLD_WAIT);
   } else {
-    console.log(`  Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Done.`);
+    console.log(`  [${mode}] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Done.`);
   }
 }

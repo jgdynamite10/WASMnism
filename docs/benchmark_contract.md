@@ -1,6 +1,6 @@
 # WASMnism Benchmark Contract
 
-**Version:** 3.0  
+**Version:** 3.1  
 **Date:** March 26, 2026  
 **Status:** Active
 
@@ -16,12 +16,18 @@ A third party should be able to implement a gateway from this contract alone,
 deploy it on any of the target platforms, and produce results that are
 apples-to-apples comparable with every other implementation.
 
-v3.0 replaces the v2.0 three-mode benchmark with a **five-test suite**
-that isolates cold start, warm-light, warm-heavy (ML inference),
-concurrency scaling, and latency consistency. The gateway now performs
-content moderation with an embedded ML toxicity classifier (MiniLMv2,
-22.7M params) running entirely inside the WASM sandbox — the dominant
-compute cost on every request containing text.
+v3.0 replaces the v2.0 three-mode benchmark with a **two-tier suite**:
+
+- **Primary suite** — benchmarks the rule-based content moderation pipeline
+  (the real customer value prop): normalization, hashing, prohibited scan,
+  PII detection, injection detection, and verdict composition. These tests
+  use `ml: false` in the request body to isolate platform performance.
+- **Stretch suite** — benchmarks embedded ML inference (MiniLMv2, 22.7M
+  params, 53 MB) running entirely inside the WASM sandbox. This tests the
+  limits of WASM compute; it is NOT the typical edge deployment pattern.
+
+The `ml` boolean field in the request controls whether ML inference runs.
+Default is `true` for backward compatibility.
 
 ---
 
@@ -43,18 +49,26 @@ compute cost on every request containing text.
                       └─────────────────────────────────────┘
 ```
 
-Five benchmark tests:
+### Primary Suite — Rule-Based Pipeline
 
 | Test | Script | What It Measures |
 |------|--------|-----------------|
-| **Cold Start** | `cold-start.js` | WASM module instantiation + ML model deserialization |
 | **Warm Light** | `warm-light.js` | Minimal-work latency (`GET /gateway/health`) |
-| **Warm Heavy** | `warm-heavy.js` | Full moderation + ML inference (`POST /gateway/moderate` with text) |
-| **Concurrency Ladder** | `concurrency-ladder.js` | Scaling behavior under increasing VUs (1→50) with ML |
-| **Consistency** | `consistency.js` | Latency jitter over a sustained 120s run with ML |
+| **Warm Policy** | `warm-policy.js` | Full 6-step rule pipeline with text, `ml: false` |
+| **Concurrency Ladder (rules)** | `concurrency-ladder.js` | Scaling 1→50 VUs, rules only (`SKIP_ML=true`) |
+| **Cold Start (rules)** | `cold-start.js` | WASM instantiation, no ML model load (`USE_ML=false`) |
 
-The gateway is self-contained — no external inference service calls. All
-computation including neural network inference runs inside the WASM sandbox.
+### Stretch Suite — Embedded ML
+
+| Test | Script | What It Measures |
+|------|--------|-----------------|
+| **Warm Heavy** | `warm-heavy.js` | Full moderation + ML inference (`ml: true`) |
+| **Consistency (ML)** | `consistency.js` | ML latency jitter over 120s |
+| **Cold Start (ML)** | `cold-start.js` | WASM instantiation + 53 MB model deserialization (`USE_ML=true`) |
+
+All computation runs inside the WASM sandbox. The stretch suite demonstrates
+that in-WASM neural network inference is feasible but has significant latency
+implications (~890ms per request vs ~3ms for rules-only).
 
 ---
 
@@ -68,18 +82,21 @@ computation including neural network inference runs inside the WASM sandbox.
 {
   "labels": ["safe", "unsafe"],
   "nonce": "<string>",
-  "text": "The prompt text to evaluate"
+  "text": "The prompt text to evaluate",
+  "ml": false
 }
 ```
 
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `labels` | array of strings | yes | 1–1000 items |
-| `nonce` | string | yes | max 256 chars |
-| `text` | string | conditionally | Required for ML inference; omit for policy-only |
+| Field | Type | Required | Default | Constraints |
+|-------|------|----------|---------|-------------|
+| `labels` | array of strings | yes | — | 1–1000 items |
+| `nonce` | string | yes | — | max 256 chars |
+| `text` | string | no | null | Text for rule-based + ML analysis |
+| `ml` | boolean | no | `true` | Set `false` to skip ML inference |
 
-When `text` is provided and non-empty, the ML toxicity classifier runs.
-When `text` is absent or empty, only rule-based policy checks execute.
+When `ml` is `true` (or omitted) AND `text` is provided, the ML toxicity
+classifier runs. When `ml` is `false`, only rule-based policy checks
+execute — regardless of whether `text` is present.
 
 ### 3.2 Moderation Response
 
@@ -120,7 +137,7 @@ field names, types, and nesting MUST NOT.
 - `moderation.policy_flags` MUST be an array (may be empty).
 - `moderation.confidence` MUST be a float 0.0–1.0.
 - `moderation.processing_ms` MUST reflect actual gateway processing time (including ML inference).
-- `moderation.ml_toxicity` MUST be present when `text` was provided and non-empty; null otherwise.
+- `moderation.ml_toxicity` MUST be present when `ml` is true and `text` is non-empty; null/absent otherwise.
 - `moderation.ml_toxicity.inference_ms` MUST reflect actual ML forward pass time.
 - `cache.hit` MUST be a boolean.
 - `cache.hash` MUST start with `sha256:` followed by 64 hex characters.
@@ -139,7 +156,7 @@ field names, types, and nesting MUST NOT.
 | Input contains injection patterns (XSS, SQL) | `block` | `injection_attempt` |
 | No flags | `allow` | _(none)_ |
 
-**ML toxicity check (when text is provided):**
+**ML toxicity check (when `ml: true` and `text` is provided):**
 
 | Condition | Verdict | Flag |
 |-----------|---------|------|
@@ -216,15 +233,17 @@ Each platform uses its native KV store:
 SLOs define the performance bar. They are NOT pass/fail gates for the
 benchmark; they are the reference lines on the scorecard.
 
-### 6.1 Cold Start SLO
+### 6.1 Primary Suite SLOs
+
+**6.1.1 Cold Start — Rules Only**
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| p50 cold start | ≤ 3000 ms | WASM instantiation + ML model deserialization |
-| p90 cold start | ≤ 5000 ms | Includes platform scheduling variance |
+| p50 cold start | ≤ 100 ms | WASM instantiation only, no model load |
+| p90 cold start | ≤ 300 ms | Includes platform scheduling variance |
 | Error rate | 0% | Cold starts must not fail |
 
-### 6.2 Warm Light SLO (GET /gateway/health)
+**6.1.2 Warm Light** (GET /gateway/health)
 
 | Metric | Target | Notes |
 |--------|--------|-------|
@@ -233,7 +252,33 @@ benchmark; they are the reference lines on the scorecard.
 | Error rate | ≤ 0.1% | Over full benchmark run |
 | Throughput | ≥ 400 RPS | At 10 concurrent connections |
 
-### 6.3 Warm Heavy SLO (POST /gateway/moderate with text)
+**6.1.3 Warm Policy** (POST /gateway/moderate, ml: false)
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| p50 latency | ≤ 30 ms | Full 6-step rule pipeline with text |
+| p95 latency | ≤ 100 ms | Includes regex PII and injection scan |
+| Error rate | ≤ 0.1% | Over full benchmark run |
+| Throughput | ≥ 100 RPS | At 10 concurrent connections |
+
+**6.1.4 Concurrency Ladder — Rules**
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Error rate | ≤ 5% | At peak 50 VUs, rules only |
+| Latency degradation | ≤ 3x baseline | p50 at 50 VUs vs p50 at 1 VU |
+
+### 6.2 Stretch Suite SLOs
+
+**6.2.1 Cold Start — ML**
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| p50 cold start | ≤ 3000 ms | WASM instantiation + 53 MB model deserialization |
+| p90 cold start | ≤ 5000 ms | Includes platform scheduling variance |
+| Error rate | 0% | Cold starts must not fail |
+
+**6.2.2 Warm Heavy** (POST /gateway/moderate, ml: true)
 
 | Metric | Target | Notes |
 |--------|--------|-------|
@@ -242,18 +287,11 @@ benchmark; they are the reference lines on the scorecard.
 | Error rate | ≤ 1% | ML inference may occasionally time out |
 | Throughput | ≥ 1 RPS | At 5 concurrent connections |
 
-### 6.4 Concurrency Ladder SLO
+**6.2.3 Consistency — ML**
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| Error rate | ≤ 10% | At peak 50 VUs with ML inference |
-| Latency degradation | ≤ 5x baseline | p50 at 50 VUs vs p50 at 1 VU |
-
-### 6.5 Consistency SLO
-
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Jitter (p95/p50) | ≤ 3.0x | Predictable latency over 120s |
+| Jitter (p95/p50) | ≤ 3.0x | Predictable ML latency over 120s |
 | Error rate | ≤ 5% | Over sustained run |
 
 ### 6.6 Measurement Method
@@ -262,10 +300,11 @@ benchmark; they are the reference lines on the scorecard.
   source of truth for the scorecard.
 - **Server-side timing** (`moderation.processing_ms`, `ml_toxicity.inference_ms`)
   is recorded for analysis but does not determine scorecard values.
-- **Suite runner:** `bench/run-suite.sh` orchestrates all 5 tests with a
-  pre-flight health check and warm-up request.
-- **Warm-up:** The suite sends one `POST /gateway/moderate` request before
-  starting any test to trigger ML model loading.
+- **Suite runner:** `bench/run-suite.sh` orchestrates all tests with a
+  pre-flight health check and warm-up request. Pass `--ml` for stretch
+  tests, `--cold` for cold start tests.
+- **Warm-up:** The suite sends one `POST /gateway/moderate` with `ml: false`
+  before starting any test.
 - **Scorecard:** Generated by `bench/build-scorecard.py` comparing any two
   results directories.
 
@@ -315,16 +354,22 @@ Each region runs the full benchmark suite independently.
 
 ### 7.4 Cold Start Protocol
 
-Cold start latency is measured by `cold-start.js`:
+Cold start latency is measured by `cold-start.js`. The `USE_ML` env var
+controls whether ML inference runs (default: `false`).
 
-1. Send a `POST /gateway/moderate` request with text (triggers ML).
-2. Record full round-trip time.
-3. Wait 120 seconds for the WASM instance to be evicted.
+**Rules-only cold start** (`USE_ML=false`):
+1. Send `POST /gateway/moderate` with text and `ml: false`.
+2. Record round-trip time (measures WASM instantiation only).
+3. Wait 120 seconds for instance eviction.
 4. Repeat for 10 iterations.
-5. Report p50, p90, and max cold start latency.
 
-The `--cold` flag on `run-suite.sh` enables this test (skipped by default
-because it takes ~20 minutes).
+**ML cold start** (`USE_ML=true`):
+1. Send `POST /gateway/moderate` with text and `ml: true`.
+2. Record round-trip time (WASM instantiation + model deserialization).
+3. Wait 120 seconds. Repeat 10 iterations.
+
+The `--cold` flag on `run-suite.sh` runs both variants when combined with
+`--ml`. Takes ~40 minutes total.
 
 ### 7.5 Deployment Configuration
 
@@ -347,8 +392,9 @@ because it takes ~20 minutes).
 ### 7.7 Result Integrity
 
 - Raw k6 JSON output is saved to `results/<platform>/<timestamp>/`.
-- Each test produces one JSON file: `warm-light.json`, `warm-heavy.json`,
-  `concurrency-ladder.json`, `consistency.json`, and optionally `cold-start.json`.
+- Primary suite files: `warm-light.json`, `warm-policy.json`, `concurrency-rules.json`.
+- Stretch suite files: `warm-heavy.json`, `consistency-ml.json`.
+- Cold start files: `cold-start-rules.json`, `cold-start-ml.json`.
 - Raw results are **gitignored** (may contain IPs/hostnames).
 - Scorecards are generated by `bench/build-scorecard.py` and also gitignored.
 - All results from a benchmark session use the same k6 version and runner.
@@ -361,51 +407,45 @@ The scorecard is generated by `bench/build-scorecard.py` from the k6
 JSON exports. For cross-platform comparison, run the suite against each
 platform and compare any two results directories.
 
-### 8.1 Warm Latency Table (per platform pair)
-
-```
-| Metric         | Platform A | Platform B | Ratio |
-|----------------|-----------|-----------|-------|
-| Light p50      |           |           |       |
-| Light p95      |           |           |       |
-| Heavy p50      |           |           |       |
-| Heavy p95      |           |           |       |
-| ML infer p50   |           |           |       |
-| Heavy RPS      |           |           |       |
-| Error rate     |           |           |       |
-```
-
-### 8.2 Concurrency & Consistency Table
+### 8.1 Primary Suite Table (per platform pair)
 
 ```
 | Metric               | Platform A | Platform B | Ratio |
 |----------------------|-----------|-----------|-------|
-| Ladder p50           |           |           |       |
-| Ladder p95           |           |           |       |
-| Ladder error rate    |           |           |       |
-| Consistency p50      |           |           |       |
+| Light p50            |           |           |       |
+| Light p95            |           |           |       |
+| Policy p50           |           |           |       |
+| Policy p95           |           |           |       |
+| Policy server_ms p50 |           |           |       |
+| Policy RPS           |           |           |       |
+| Ladder p50 (rules)   |           |           |       |
+| Ladder errors        |           |           |       |
+| Cold (rules) p50     |           |           |       |
+```
+
+### 8.2 Stretch Suite Table (per platform pair)
+
+```
+| Metric               | Platform A | Platform B | Ratio |
+|----------------------|-----------|-----------|-------|
+| Heavy p50            |           |           |       |
+| Heavy p95            |           |           |       |
+| ML infer p50         |           |           |       |
+| Heavy RPS            |           |           |       |
+| Consistency p50 (ML) |           |           |       |
 | Jitter (p95/p50)     |           |           |       |
+| Cold (ML) p50        |           |           |       |
 ```
 
-### 8.3 Cold Start Table
+### 8.3 Cost Table
 
 ```
-| Metric         | Platform A | Platform B | Ratio |
-|----------------|-----------|-----------|-------|
-| Cold p50       |           |           |       |
-| Cold p90       |           |           |       |
-| Cold max       |           |           |       |
-```
-
-### 8.4 Cost Table
-
-```
-| Platform | $/1M Requests (warm heavy) | $/1M Requests (warm light) |
-|----------|---------------------------|---------------------------|
-| Spin     |                           |                           |
-| Fastly   |                           |                           |
-| Workers  |                           |                           |
-| Lambda   |                           |                           |
+| Platform | $/1M (rules) | $/1M (ML) |
+|----------|-------------|-----------|
+| Spin     |             |           |
+| Fastly   |             |           |
+| Workers  |             |           |
+| Lambda   |             |           |
 ```
 
 ---
@@ -413,31 +453,32 @@ platform and compare any two results directories.
 ## 9. Moderation Validation
 
 Before running performance benchmarks, each platform MUST pass the moderation
-validation suite to prove correctness. The suite sends the same safe image
-(`bench/fixtures/benchmark.jpg`) with different label/text payloads and
-asserts identical verdicts across all platforms.
+validation suite to prove correctness. The suite sends JSON payloads to
+`POST /gateway/moderate` with various label/text combinations and asserts
+identical verdicts across all platforms.
 
 ### 9.1 Validation Scenarios
 
 | # | Name | Labels | Text | Expected Verdict | Expected Flag |
 |---|------|--------|------|-----------------|---------------|
-| S1 | Clean input | `["cat","dog","<unique>"]` | — | `allow` | _(none)_ |
+| S1 | Clean input + ML | `["cat","dog","<unique>"]` | `"A peaceful sunset over the mountains"` | `allow` | `ml_toxicity.toxic < 0.50` |
 | S2 | XSS injection | `["<script>alert(1)</script>"]` | — | `block` | `injection_attempt` |
 | S3 | Prohibited terms | `["kill","bomb","cat"]` | — | `block` | `prohibited_term` |
 | S4 | PII email | `["cat","dog"]` | `"contact user@example.com"` | `review` | `pii_detected` |
 | S5 | PII phone | `["cat"]` | `"call 555-123-4567"` | `review` | `pii_detected` |
 | S6 | Leetspeak evasion | `["h@t3","k1ll"]` | — | `block` | `prohibited_term` |
 | S7 | SQL injection | `["cat'; DROP TABLE users;--"]` | — | `block` | `injection_attempt` |
-| S8 | Cache hit | _(repeat S1 labels)_ | — | `allow` | `cache.hit: true` |
-| S9 | Image not blocklisted | `["sunrise","mountain","river"]` | — | `allow` | `image_blocklisted: false` |
+| S8 | Cache hit | _(repeat S1 labels, no text)_ | — | `allow` | `cache.hit: true` |
+| S9 | ML toxicity | `["safe","unsafe"]` | `"You are pathetic and disgusting..."` | `block` or `review` | `ml_toxicity.toxic ≥ 0.50` |
 
-S1 uses a timestamped label to guarantee a cache miss and fresh inference.
+S1 uses a timestamped label to guarantee a cache miss.
 
 ### 9.2 Additional Assertions (S1 only)
 
-- `moderation.safety_scores` MUST be present (array of 10 safety labels).
-- All safety scores MUST be below 0.50 (safe image).
-- `classification.results` MUST contain only user-supplied labels (safety labels stripped).
+- `moderation.ml_toxicity` MUST be present (text was provided).
+- `moderation.ml_toxicity.toxic` MUST be below 0.50 (safe text).
+- `moderation.ml_toxicity.inference_ms` MUST be positive.
+- `moderation.processing_ms` MUST be positive.
 
 ### 9.3 Running Validation
 
@@ -459,3 +500,4 @@ All four platforms must produce 9/9 pass before performance benchmarks are run.
 | 2.0 | 2026-03-10 | Moderation gateway: 3 benchmark modes, multi-region, cold start protocol, KV store caching, updated scorecard |
 | 2.1 | 2026-03-25 | Safety labels, image blocklist, moderation validation suite (9 scenarios), text field extraction |
 | 3.0 | 2026-03-26 | Embedded ML toxicity classifier; 5-test benchmark suite (cold start, warm light, warm heavy, concurrency ladder, consistency); removed external inference proxy; updated SLOs for ML workload |
+| 3.1 | 2026-03-26 | Two-tier benchmark: primary (rules, `ml:false`) and stretch (ML). Added `ml` request field, `warm-policy.js`, rules-only cold start. Updated SLOs and scorecard format. |
