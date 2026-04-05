@@ -1,44 +1,58 @@
 # WASMnism Cost Configuration
 # Copy to cost-config.yaml and fill in real values from your platform dashboards.
 # NEVER commit cost-config.yaml (contains account-specific pricing).
+# Pricing verified: April 2026
 
-# Pricing per platform (USD)
 platforms:
-  spin:
-    request_per_1m: 0.50
-    kv_read_per_1m: 0.50
-    kv_write_per_1m: 1.00
-    bandwidth_per_gb: 0.08
-    notes: "Fermyon Cloud / Akamai Functions pricing"
-
   fastly:
-    request_per_10k: 0.40
-    kv_read_per_1m: 0.50
-    kv_write_per_1m: 5.00
-    bandwidth_per_gb: 0.08
-    notes: "Fastly Compute pricing"
+    compute_request_per_1m: 0.50
+    compute_vcpu_ms_per_1m: 0.05
+    cdn_bandwidth_per_gb: 0.12       # NA/EU rate
+    cdn_request_per_1m: 1.00         # $0.01 per 10K
+    kv_read_per_1m: 0.55             # Class B operations
+    kv_write_per_1m: 6.50            # Class A, $0.65 per 100K
+    free_compute_requests: 10000000  # 10M/mo
+    free_vcpu_ms: 100000000          # 100M/mo
+    free_cdn_bandwidth_gb: 100
+    free_cdn_requests: 1000000       # 1M/mo
+    notes: "Source: fastly.com/pricing (April 2026)"
+
+  fermyon:
+    starter_monthly: 0.00
+    starter_requests: 100000         # 100K/mo
+    growth_monthly: 19.38
+    growth_requests: 1000000         # 1M/mo
+    bandwidth_per_gb: 0.00           # included in plan
+    notes: "Source: fermyon.com/pricing — plan-based, no per-ms compute billing"
+
+  akamai:
+    pricing: "contract-based"
+    notes: "Not publicly listed. Contact Akamai sales for quote."
 
   workers:
-    request_per_1m: 0.30
-    cpu_per_1m_ms: 0.02
+    platform_monthly: 5.00
+    request_per_1m: 0.30             # after 10M included
+    cpu_ms_per_1m: 0.02              # after 30M included
+    bandwidth_per_gb: 0.00           # free
     kv_read_per_1m: 0.50
     kv_write_per_1m: 5.00
-    bandwidth_per_gb: 0.00
-    notes: "Cloudflare Workers Standard pricing, bandwidth included"
+    free_requests: 10000000          # 10M/mo with $5 plan
+    free_cpu_ms: 30000000            # 30M/mo
+    notes: "Source: developers.cloudflare.com/workers/platform/pricing"
 
   lambda:
     request_per_1m: 0.20
-    compute_per_gb_second: 0.0000133
+    compute_per_gb_second: 0.0000133334  # ARM64 rate
     memory_mb: 128
-    dynamodb_read_per_1m: 0.25
-    dynamodb_write_per_1m: 1.25
-    nat_per_hour: 0.045
-    nat_per_gb: 0.045
     bandwidth_per_gb: 0.09
-    notes: "AWS Lambda ARM64, us-east-1 pricing"
+    free_requests: 1000000           # 1M/mo
+    free_gb_seconds: 400000          # 400K GB-s/mo
+    notes: "Source: aws.amazon.com/lambda/pricing — ARM64, us-east-1"
 
-# Benchmark parameters (from actual runs)
 benchmark:
-  avg_response_size_kb: 1.0
-  cache_hit_rate: 0.80
-  avg_compute_ms: 2.5
+  avg_response_size_kb: 0.7          # measured from /gateway/moderate
+  avg_request_size_kb: 0.2
+  avg_cpu_ms_fastly: 4.0             # from benchmark medians
+  avg_cpu_ms_akamai: 2.3
+  avg_cpu_ms_fermyon: 5.5
+  cache_hit_rate: 0.0                # basic test, no caching

@@ -70,6 +70,9 @@ make deploy-fermyon
 
 # Or deploy to Akamai Functions (requires `spin aka login` first)
 make deploy-akamai
+
+# Or deploy to Fastly Compute (requires `fastly auth login` first)
+make deploy-fastly
 ```
 
 ### 2. Run the full pipeline
@@ -78,11 +81,12 @@ make deploy-akamai
 # Primary suite only (~40 min: validate + 7 runs)
 make benchmark PLATFORM=fermyon URL=https://your-gateway.fermyon.app
 make benchmark PLATFORM=akamai  URL=https://your-gateway.fwf.app
+make benchmark PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 
-# Primary + stretch (ML) suite (~60 min)
+# Primary + stretch (ML) suite (~60 min) — not available on Fastly
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml"
 
-# Everything including cold start (~100 min)
+# Everything including cold start (~100 min) — not available on Fastly
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
 ```
 
@@ -114,6 +118,7 @@ make runners-status
 # From all 3 regions in parallel
 make bench-multiregion PLATFORM=fermyon URL=https://your-gateway.fermyon.app BENCH_FLAGS="--ml --cold"
 make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
+make bench-multiregion PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 ```
 
 This SSHs into each runner, executes the full reproduce pipeline, and

@@ -141,7 +141,7 @@ field names, types, and nesting MUST NOT.
 - `moderation.ml_toxicity.inference_ms` MUST reflect actual ML forward pass time.
 - `cache.hit` MUST be a boolean.
 - `cache.hash` MUST start with `sha256:` followed by 64 hex characters.
-- `gateway.platform` MUST be one of the target platforms (`Fermyon Cloud`, `Akamai Functions`, `fastly`, `workers`, `lambda`).
+- `gateway.platform` MUST be one of the target platforms (`Fermyon Cloud`, `Akamai Functions`, `Fastly Compute`, `workers`, `lambda`).
 - `gateway.request_id` MUST be a UUID v4.
 - HTTP status MUST be `200` on success.
 

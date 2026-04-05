@@ -25,8 +25,17 @@ fi
 echo "Health check passed"
 echo ""
 
+# Fastly Compute has no filesystem access for the ML model
+ML_ENABLED="true"
+if [ "${PLATFORM}" = "fastly" ]; then
+    ML_ENABLED="false"
+    echo "Note: ML toxicity checks disabled (Fastly Compute has no filesystem for model)"
+    echo ""
+fi
+
 k6 run \
     --env GATEWAY_URL="${GATEWAY_URL}" \
+    --env ML_ENABLED="${ML_ENABLED}" \
     "${SCRIPT_DIR}/moderation-validation.js"
 
 EXIT=$?

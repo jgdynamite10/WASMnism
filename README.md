@@ -4,11 +4,12 @@
 
 A portable AI Prompt Firewall deployed as WebAssembly across multiple edge platforms, with an embedded ML toxicity classifier running entirely inside the WASM runtime. Built to produce a decision-grade price-per-performance scorecard comparing WASM edge compute providers.
 
-> **Status**: Work in progress. Fermyon Cloud and Akamai Functions are live and benchmarked. Fastly, Cloudflare, and Lambda deployments are next.
+> **Status**: Work in progress. Fermyon Cloud, Akamai Functions, and Fastly Compute are live and benchmarked. Cloudflare and Lambda deployments are next.
 
 **Live demos**:
 - Fermyon Cloud: [wasm-prompt-firewall-imjy4pe0.fermyon.app](https://wasm-prompt-firewall-imjy4pe0.fermyon.app/)
 - Akamai Functions: [0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app](https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app/)
+- Fastly Compute: [morally-civil-urchin.edgecompute.app](https://morally-civil-urchin.edgecompute.app/)
 
 ---
 
@@ -44,7 +45,7 @@ A Svelte SaaS-style dashboard with:
 |----------|--------|----------|
 | **Fermyon Cloud** (Spin) | Live + benchmarked | [fermyon.app](https://wasm-prompt-firewall-imjy4pe0.fermyon.app/) |
 | **Akamai Functions** (Spin) | Live + benchmarked | [fwf.app](https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app/) |
-| **Fastly Compute** | Scaffolded | — |
+| **Fastly Compute** | Live + benchmarked | [edgecompute.app](https://morally-civil-urchin.edgecompute.app/) |
 | **Cloudflare Workers** | Scaffolded | — |
 | **AWS Lambda** | Scaffolded | — |
 
@@ -73,7 +74,7 @@ A Svelte SaaS-style dashboard with:
 
 - [x] **Fermyon Cloud (Spin)** — deployed, validated, multi-region benchmarked
 - [x] **Akamai Functions (Spin)** — deployed, validated, multi-region benchmarked
-- [ ] **Fastly Compute** — adapter scaffolded, needs deployment and testing
+- [x] **Fastly Compute** — deployed, validated, multi-region benchmarked (rules-only; no ML due to filesystem constraint)
 - [ ] **Cloudflare Workers** — adapter scaffolded, needs deployment and testing
 - [ ] **AWS Lambda** — adapter scaffolded, needs deployment and testing
 
@@ -90,6 +91,7 @@ A Svelte SaaS-style dashboard with:
 - [x] Root Makefile with all automation targets
 - [x] Multi-region benchmark data (3 geographic locations: us-ord, eu-central, ap-south)
 - [x] Cross-platform scorecard: Fermyon vs Akamai ([results/fermyon_vs_akamai_scorecard.md](results/fermyon_vs_akamai_scorecard.md))
+- [x] Three-platform scorecard: Fermyon vs Akamai vs Fastly ([results/three_platform_scorecard.md](results/three_platform_scorecard.md))
 
 ### Cost Analysis
 
@@ -99,13 +101,13 @@ A Svelte SaaS-style dashboard with:
 ### Blog Post
 
 - [ ] Executive summary and narrative hook
-- [ ] Architecture deep-dive with diagrams
+- [x] Architecture deep-dive with diagrams ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - [ ] Benchmark results with reproducible methodology
 - [x] Reproduce instructions ([docs/REPRODUCE.md](docs/REPRODUCE.md))
 
 ### Potential Improvements
 
-- [ ] ML inference optimization (779ms on Akamai, 1,760ms on Fermyon — platform runtime is dominant factor)
+- [ ] ML inference optimization (779ms on Akamai, 1,760ms on Fermyon — platform runtime is dominant factor; not available on Fastly)
 - [ ] Additional toxicity categories beyond `toxic` and `severe_toxic`
 - [ ] Quantized model variant for lower-latency ML inference
 - [ ] Raw JSON response toggle in the dashboard
@@ -115,15 +117,21 @@ A Svelte SaaS-style dashboard with:
 
 ## Architecture
 
+> Full architecture reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
 ```
-┌──────────┐     ┌──────────────────────────────────┐
-│  Browser  │────▶│  Edge Gateway (WASM)              │
-│  / k6     │◀────│                                    │
-└──────────┘     │  1. Text normalization + hashing   │
-                 │  2. Rule-based policy checks       │
-                 │  3. ML toxicity inference (Tract)   │
-                 │  4. Verdict composition             │
-                 └──────────────────────────────────┘
+  ┌──────────┐          ┌─────────────────────────────────────────────────┐
+  │  Browser  │── HTTPS ▶│  Edge Gateway (WASM binary)                     │
+  │  / k6     │◀─────────│                                                 │
+  └──────────┘          │  ┌─────────────┐    ┌────────────────────────┐  │
+                         │  │  Platform    │    │  Core Library (Rust)   │  │
+                         │  │  Adapter     │───▶│                        │  │
+                         │  │  (spin/      │    │  1. Normalize + hash   │  │
+                         │  │   fastly/    │    │  2. Rule-based checks  │  │
+                         │  │   workers/   │    │  3. ML toxicity (Tract)│  │
+                         │  │   lambda)    │    │  4. Verdict merge      │  │
+                         │  └─────────────┘    └────────────────────────┘  │
+                         └─────────────────────────────────────────────────┘
 ```
 
 The gateway is a single Rust codebase compiled to `wasm32-wasip1`, with thin platform adapters:
@@ -132,7 +140,7 @@ The gateway is a single Rust codebase compiled to `wasm32-wasip1`, with thin pla
 |----------|---------|--------|
 | **Fermyon Cloud** (Spin) | `edge-gateway/adapters/spin/` | Deployed + benchmarked |
 | **Akamai Functions** (Spin) | `edge-gateway/adapters/spin/` | Deployed + benchmarked |
-| **Fastly Compute** | `edge-gateway/adapters/fastly/` | Scaffolded |
+| **Fastly Compute** | `edge-gateway/adapters/fastly/` | Deployed + benchmarked (rules only) |
 | **Cloudflare Workers** | `edge-gateway/adapters/workers/` | Scaffolded |
 | **AWS Lambda** | `edge-gateway/adapters/lambda/` | Scaffolded |
 
@@ -161,6 +169,7 @@ WASMnism/
 │   └── runners.env         #   Runner IPs (gitignored)
 ├── cost/                   # Cost model per 1M requests
 ├── docs/                   # Benchmark contract, moderation guide, reproduce guide
+│   ├── ARCHITECTURE.md     #   Full system architecture reference
 │   └── REPRODUCE.md        #   Step-by-step stranger reproduction guide
 └── results/                # Benchmark data (gitignored)
 ```
@@ -174,6 +183,7 @@ WASMnism/
 | [Rust](https://rustup.rs/) + `wasm32-wasip1` | Build gateway | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh && rustup target add wasm32-wasip1` |
 | [Spin CLI](https://developer.fermyon.com/spin/install) | Build + deploy | `curl -fsSL https://developer.fermyon.com/downloads/install.sh \| bash` |
 | Spin aka plugin | Akamai Functions | `spin plugins install aka` |
+| [Fastly CLI](https://www.fastly.com/documentation/reference/cli/) | Fastly Compute deploy | `brew install fastly/tap/fastly` |
 | [Node.js](https://nodejs.org/) 18+ | Frontend build | `brew install node` or [nodejs.org](https://nodejs.org) |
 | [k6](https://k6.io) | Benchmarks | `brew install k6` |
 | Python 3 | Medians + scorecard | Pre-installed on macOS/Ubuntu |
@@ -213,6 +223,14 @@ make deploy-akamai
 # or: cd edge-gateway/adapters/spin && spin aka deploy --no-confirm
 ```
 
+### Deploy to Fastly Compute
+
+```bash
+fastly auth login    # one-time auth
+make deploy-fastly
+# or: cd edge-gateway/adapters/fastly && fastly compute publish
+```
+
 ## ML Model
 
 | Property | Value |
@@ -222,7 +240,7 @@ make deploy-akamai
 | Format | NNEF (Tract native) |
 | Vocab size | 8,000 tokens |
 | Model file | ~53 MB |
-| Inference | ~779ms (Akamai Functions) / ~1,760ms (Fermyon Cloud) |
+| Inference | ~779ms (Akamai Functions) / ~1,760ms (Fermyon Cloud) / N/A (Fastly — no FS) |
 | Categories | `toxic`, `severe_toxic` |
 
 The model runs entirely inside the WASM sandbox — no external ML service calls. It was exported from PyTorch to ONNX, vocabulary-trimmed from 30k to 8k tokens to fit deployment size limits, then converted to Tract's NNEF format to avoid expensive protobuf parsing in the WASM runtime.
@@ -257,6 +275,9 @@ make benchmark PLATFORM=fermyon URL=https://wasm-prompt-firewall-imjy4pe0.fermyo
 # Akamai Functions
 make benchmark PLATFORM=akamai URL=https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
 
+# Fastly Compute (rules-only, no ML)
+make benchmark PLATFORM=fastly URL=https://morally-civil-urchin.edgecompute.app
+
 # With ML + cold start (~100 min)
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
 
@@ -279,7 +300,7 @@ make bench-multiregion PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FL
 
 Set `ml: false` for rules-only (recommended for production). Omit or set `ml: true` to include ML toxicity inference.
 
-**Rules-only response** (`ml: false`) — ~2.3ms (Akamai Functions) / ~5.5ms (Fermyon Cloud):
+**Rules-only response** (`ml: false`) — ~3ms (Fastly Compute) / ~2.3ms (Akamai Functions) / ~5.5ms (Fermyon Cloud):
 
 ```json
 {

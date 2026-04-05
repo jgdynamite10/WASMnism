@@ -1,112 +1,266 @@
-# Cost Model: Price per 1M Requests
+# Cost Model: Price per 1M Requests at SLO
 
-## Methodology
-
-Cost is calculated for 1 million requests at each benchmark mode.
-Pricing uses the public rate card for each platform as of March 2026.
-All costs are in USD.
+**Date:** April 5, 2026
+**Workload:** Rules-only moderation (`ml: false`) — the production-recommended mode
+**Sources:** Official pricing pages, verified April 2026
 
 ---
 
-## Platform Pricing Summary
-
-### Akamai Functions (Fermyon Cloud / Spin)
-
-| Component | Rate |
-|-----------|------|
-| Requests | $0.50 per 1M requests |
-| Compute | $18/mo per dedicated core (included in free tier for low volume) |
-| KV Store reads | $0.50 per 1M reads |
-| KV Store writes | $1.00 per 1M writes |
-| Bandwidth | $0.08/GB |
+## 1. Platform Pricing (Pay-As-You-Go Rates)
 
 ### Fastly Compute
 
+Source: [fastly.com/pricing](https://www.fastly.com/pricing)
+
+| Component | Free Tier | Rate (after free) |
+|-----------|-----------|-------------------|
+| Compute requests | 10M/mo | $0.50 per 1M |
+| Compute vCPU-ms | 100M/mo | $0.05 per 1M vCPU-ms |
+| CDN bandwidth (NA/EU) | 100 GB/mo | $0.12/GB |
+| CDN requests | 1M/mo | $1.00 per 1M ($0.01/10K) |
+| KV Store reads (Class B) | 1M/mo | $0.55 per 1M |
+| KV Store writes (Class A) | 100K/mo | $6.50 per 1M ($0.65/100K) |
+| Minimum monthly | $0 | — |
+
+Note: Compute services also incur CDN delivery charges (bandwidth + requests).
+
+### Fermyon Cloud
+
+Source: [fermyon.com/pricing](https://www.fermyon.com/pricing)
+
+| Component | Starter (free) | Growth |
+|-----------|---------------|--------|
+| Monthly fee | $0 | $19.38 |
+| Requests included | 100K/mo | 1M/mo |
+| Bandwidth included | 5 GB | 50 GB |
+| Apps | 5 | 100 |
+| Compute billing | Included (no per-ms charge) | Included |
+| Beyond quota | Throttled | Enterprise contact |
+
+No per-request overage pricing is published. The plan fee IS the cost.
+
+### Akamai Functions (EdgeWorkers)
+
+Source: [techdocs.akamai.com/edgeworkers](https://techdocs.akamai.com/edgeworkers/docs/reporting-and-billing)
+
 | Component | Rate |
 |-----------|------|
-| Requests | $0.40 per 10K requests ($40 per 1M) |
-| Compute (WASM exec) | Included in request price |
-| KV Store reads | $0.50 per 1M reads |
-| KV Store writes | $5.00 per 1M writes |
-| Bandwidth | $0.08/GB |
+| Per-event pricing | **Not publicly listed** — contract-based |
+| Resource tiers | Basic, Dynamic, Enterprise Compute |
+| Bandwidth | Part of Akamai delivery contract |
+| Minimum | Contract-dependent |
+
+Akamai does not publish self-serve pricing for Functions. Costs require a sales quote.
 
 ### Cloudflare Workers
 
-| Component | Rate |
-|-----------|------|
-| Requests (Standard) | $0.30 per 1M requests |
-| CPU time | $0.02 per 1M ms of CPU time |
-| KV reads | $0.50 per 1M reads |
-| KV writes | $5.00 per 1M writes |
-| Bandwidth | Free (included) |
+Source: [developers.cloudflare.com/workers/platform/pricing](https://developers.cloudflare.com/workers/platform/pricing/)
 
-### AWS Lambda
+| Component | Free | Paid ($5/mo) |
+|-----------|------|-------------|
+| Requests | 100K/day | 10M/mo included, then $0.30/1M |
+| CPU time | 10ms/invocation limit | 30M CPU-ms/mo included, then $0.02/1M CPU-ms |
+| Bandwidth | Free | Free |
+| KV reads | 100K/day | 10M/mo, then $0.50/1M |
+| KV writes | 1K/day | 1M/mo, then $5.00/1M |
+| Minimum monthly | $0 | $5 |
 
-| Component | Rate |
-|-----------|------|
-| Requests | $0.20 per 1M requests |
-| Compute | $0.0000133 per GB-second (128MB ARM64) |
-| DynamoDB reads | $0.25 per 1M read capacity units |
-| DynamoDB writes | $1.25 per 1M write capacity units |
-| NAT Gateway | $0.045/hr + $0.045/GB (for outbound to inference) |
-| Bandwidth | $0.09/GB |
+### AWS Lambda (ARM64, 128MB)
 
----
+Source: [aws.amazon.com/lambda/pricing](https://aws.amazon.com/lambda/pricing/)
 
-## Cost Calculation Template
-
-### Per-Test Assumptions
-
-| Test | Avg Response Size | KV Reads | Compute Weight | Notes |
-|------|------------------|----------|----------------|-------|
-| Warm Light (health) | ~0.2 KB | 0 | Minimal | No ML, no policy |
-| Warm Policy (rules) | ~0.7 KB | 0 | ~3ms CPU | Full rule pipeline, `ml: false` |
-| Warm Heavy (ML) | ~1 KB | 0 | ~890ms CPU | ML toxicity inference |
-
-### Cost per 1M Requests
-
-Fermyon Cloud costs are based on observed benchmark data (March 2026).
-Other platforms to be filled after deployment and benchmarking.
-
-**Fermyon Cloud (Spin) — observed metrics:**
-- Warm-light: avg 52ms round-trip, ~0.2 KB response, ~189 RPS at 10 VUs
-- Warm-policy: avg 562ms round-trip (3.2ms server), ~0.7 KB, ~17 RPS at 10 VUs
-- Warm-heavy: avg 1400ms round-trip (912ms server), ~1 KB, ~3.5 RPS at 5 VUs
-
-| Platform | Test | Requests | Compute | KV | Bandwidth | Total |
-|----------|------|----------|---------|----|-----------| ------|
-| Spin | warm-light | $0.50 | included | N/A | $0.16 | **~$0.66** |
-| Spin | warm-policy | $0.50 | included | N/A | $0.06 | **~$0.56** |
-| Spin | warm-heavy | $0.50 | included | N/A | $0.08 | **~$0.58** |
-| Fastly | warm-light | | | N/A | | |
-| Fastly | warm-policy | | | N/A | | |
-| Fastly | warm-heavy | | | N/A | | |
-| Workers | warm-light | | | N/A | | |
-| Workers | warm-policy | | | N/A | | |
-| Workers | warm-heavy | | | N/A | | |
-| Lambda | warm-light | | | N/A | | |
-| Lambda | warm-policy | | | N/A | | |
-| Lambda | warm-heavy | | | N/A | | |
-
-**Fermyon cost notes:**
-- Request cost: $0.50/1M applies to all test types.
-- Compute: Included in Fermyon Cloud pricing (no per-ms billing).
-  This is a significant advantage for ML-heavy workloads — the ~890ms
-  of CPU time per heavy request incurs no additional compute charge.
-  For rules-only (warm-policy), the ~3ms processing is negligible.
-- Bandwidth: 1M × 0.2 KB = 0.2 GB × $0.08 = $0.016 (light);
-  1M × 0.7 KB = 0.7 GB × $0.08 = $0.056 (policy);
-  1M × 1 KB = 1 GB × $0.08 = $0.08 (heavy).
-- KV: Not used in warm-light, warm-policy, or warm-heavy benchmarks.
+| Component | Free Tier | Rate (after free) |
+|-----------|-----------|-------------------|
+| Requests | 1M/mo | $0.20 per 1M |
+| Compute (ARM) | 400K GB-s/mo | $0.0000133334/GB-second |
+| Data transfer out | 100 GB/mo (AWS free tier) | $0.09/GB |
+| Minimum monthly | $0 | — |
 
 ---
 
-## Notes
+## 2. Workload Profile (from benchmarks)
 
-- Pricing is based on public rate cards and may differ from negotiated enterprise contracts.
-- Free tier allocations are NOT included in calculations (we assume production-scale volume).
-- The gateway is self-contained — no external inference calls, so no NAT Gateway costs.
-- Warm-policy cost is minimal (~3ms CPU per request).
-- Warm-heavy cost is dominated by CPU time (ML inference ~890ms per request).
-- Bandwidth costs use average response size from benchmark measurements.
-- All prices are pay-as-you-go; reserved capacity or committed use discounts are excluded.
+Our rules-only moderation request:
+
+| Parameter | Value | Source |
+|-----------|-------|--------|
+| Server processing time | ~4ms (Fastly), ~2.3ms (Akamai), ~5.5ms (Fermyon) | Benchmark medians |
+| Response size | ~700 bytes (0.7 KB) | Measured from `/gateway/moderate` |
+| Request size | ~200 bytes | POST body with labels + text |
+| KV operations | 0 (basic test), 1 read + maybe 1 write (cached mode) | Benchmark contract |
+| External calls | 0 (self-contained gateway) | Architecture design |
+
+---
+
+## 3. Cost per 1M Requests (Rules-Only Moderation)
+
+Assumptions:
+- Using measured ~4ms vCPU per request (conservative, Fastly's actual)
+- Response size 0.7 KB = 0.7 GB per 1M requests
+- No KV operations (basic moderation mode)
+- Free tier allocations **excluded** (production-scale comparison)
+
+### Fastly Compute
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Compute requests | 1M × $0.50/1M | $0.50 |
+| Compute vCPU-ms | 4ms × 1M = 4M vCPU-ms × $0.05/1M | $0.20 |
+| CDN bandwidth | 0.7 GB × $0.12/GB | $0.08 |
+| CDN requests | 1M × $1.00/1M | $1.00 |
+| **Total per 1M** | | **$1.78** |
+
+### Fermyon Cloud (Growth Plan)
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Plan fee | $19.38/mo (covers 1M requests) | $19.38 |
+| Compute | Included | $0.00 |
+| Bandwidth | 0.7 GB (within 50 GB included) | $0.00 |
+| **Total per 1M** | | **$19.38** |
+
+At the Starter plan (free), cost is $0 for up to 100K requests/month.
+
+### Cloudflare Workers (Paid Plan)
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Platform fee | $5/mo minimum | $5.00 |
+| Requests | 1M (within 10M included) | $0.00 |
+| CPU time | 4ms × 1M = 4M CPU-ms (within 30M included) | $0.00 |
+| Bandwidth | Free | $0.00 |
+| **Total per 1M** | | **$5.00** |
+
+### AWS Lambda (128MB ARM64)
+
+| Component | Calculation | Cost |
+|-----------|-------------|------|
+| Requests | 1M × $0.20/1M | $0.20 |
+| Compute | 0.125 GB × 0.005s × 1M = 625 GB-s × $0.0000133 | $0.01 |
+| Data transfer | 0.7 GB × $0.09/GB | $0.06 |
+| **Total per 1M** | | **$0.27** |
+
+### Akamai Functions
+
+| Component | Cost |
+|-----------|------|
+| Contract-based | **Quote required** |
+
+---
+
+## 4. Cost at Scale
+
+### Monthly cost by request volume (free tiers INCLUDED)
+
+| Monthly Volume | Fastly Compute | Fermyon Cloud | Cloudflare Workers | AWS Lambda |
+|---------------|---------------|--------------|-------------------|------------|
+| **100K** | **$0.00** | **$0.00** (Starter) | **$0.00** (Free) | **$0.00** |
+| **1M** | **$0.00** | $19.38 (Growth) | $5.00 | **~$0.06** |
+| **10M** | **$0.00** | Enterprise (?) | $5.20 | **$2.43** |
+| **100M** | $159.00 | Enterprise (?) | $39.40 | $26.10 |
+| **1B** | $1,517.00 | Enterprise (?) | $381.40 | $265.79 |
+
+### Monthly cost by request volume (free tiers EXCLUDED — true unit economics)
+
+| Monthly Volume | Fastly Compute | Fermyon Cloud | Cloudflare Workers | AWS Lambda |
+|---------------|---------------|--------------|-------------------|------------|
+| **1M** | **$1.78** | $19.38 | $5.32 | **$0.27** |
+| **10M** | $17.80 | Enterprise (?) | $8.20 | $2.70 |
+| **100M** | $178.00 | Enterprise (?) | $37.00 | $27.00 |
+| **1B** | $1,780.00 | Enterprise (?) | $370.00 | $270.00 |
+
+### Detailed calculation at 100M/month (with free tiers)
+
+**Fastly Compute:**
+- Compute requests: 10M free + 90M × $0.50/1M = $45.00
+- Compute vCPU-ms: 100M free + 300M × $0.05/1M = $15.00 (400M total at 4ms/req)
+- CDN bandwidth: 70 GB (within 100 GB free) = $0.00
+- CDN requests: 1M free + 99M × $1.00/1M = $99.00
+- **Total: $159.00**
+
+**Cloudflare Workers:**
+- Platform: $5.00
+- Requests: 10M free + 90M × $0.30/1M = $27.00
+- CPU-ms: 30M free + 370M × $0.02/1M = $7.40 (400M total)
+- Bandwidth: $0.00
+- **Total: $39.40**
+
+**AWS Lambda (128MB ARM64):**
+- Requests: 1M free + 99M × $0.20/1M = $19.80
+- Compute: 400K GB-s free + 62,100 GB-s × $0.0000133 = $0.83 (62,500 total)
+- Data transfer: 70 GB × $0.09/GB = $6.30 (past 100 GB AWS free tier if on 12-mo trial, otherwise full cost)
+- **Total: ~$26.93**
+
+---
+
+## 5. Cost-Performance Matrix
+
+The real question: what do you get for your dollar?
+
+### At 1M requests/month (with free tiers)
+
+| Platform | Monthly Cost | Policy p50 | Cost per 1M | Effective $/request |
+|----------|-------------|-----------|-------------|---------------------|
+| **Fastly Compute** | **$0.00** | **8.6ms** | **$0.00** | **$0.00** |
+| AWS Lambda | ~$0.06 | TBD | ~$0.06 | $0.00000006 |
+| Cloudflare Workers | $5.00 | TBD | $5.00 | $0.000005 |
+| Fermyon Cloud | $19.38 | 1,100ms | $19.38 | $0.00001938 |
+
+### At 100M requests/month
+
+| Platform | Monthly Cost | Policy p50 | Cost per req | Latency × Cost Score |
+|----------|-------------|-----------|-------------|---------------------|
+| **Fastly Compute** | $159 | **8.6ms** | $0.0000016 | **Best** (fast + cheap) |
+| AWS Lambda | ~$27 | TBD | $0.00000027 | TBD |
+| Cloudflare Workers | ~$39 | TBD | $0.00000039 | TBD |
+| Fermyon Cloud | Enterprise | 1,100ms | Unknown | Slow + unknown price |
+
+---
+
+## 6. Key Insights for the Blog Post
+
+### Free tier comparison
+
+| Platform | Free requests/mo | Free compute | Free bandwidth |
+|----------|-----------------|-------------|---------------|
+| **Fastly Compute** | **10M** | **100M vCPU-ms** | **100 GB** |
+| Cloudflare Workers | ~3M (100K/day) | 10ms/req cap | Unlimited |
+| AWS Lambda | 1M | 400K GB-s | 100 GB (AWS trial) |
+| Fermyon Cloud | 100K | Included | 5 GB |
+
+Fastly's free tier is the most generous — **10M requests/month for free** with 100M vCPU-ms. For our 4ms/request workload, that's 25M requests before hitting compute limits.
+
+### Cost structure differences
+
+1. **Fermyon Cloud**: Plan-based. Simple, but expensive per-request. No compute metering is great for ML-heavy workloads (890ms CPU for free) but the $19.38/1M floor hurts for rules-only.
+
+2. **Fastly Compute**: Usage-based with generous free tier. Most cost-effective at low-to-mid volume. CDN request charges ($1/1M) add up at scale.
+
+3. **Cloudflare Workers**: Usage-based with $5/mo floor. No bandwidth charges is a unique advantage. Most cost-effective at high volume.
+
+4. **AWS Lambda**: Pure usage-based, cheapest per-request at scale. No platform fee. But add API Gateway ($1/1M) or ALB ($0.008/LCU-hour) to get HTTP endpoints.
+
+### The price-performance winner
+
+At every scale tested, **Fastly Compute** delivers the best price-performance ratio for rules-only moderation:
+
+| Scale | Cheapest | Fastest | Best price-performance |
+|-------|----------|---------|----------------------|
+| 1M/mo | Fastly ($0) | Fastly (8.6ms) | **Fastly** |
+| 10M/mo | Fastly ($0) | Fastly (8.6ms) | **Fastly** |
+| 100M/mo | Lambda ($27) | Fastly (8.6ms) | **Depends on priority** |
+| 1B/mo | Lambda ($266) | Fastly (8.6ms) | **Lambda if cost-first, Fastly if latency-first** |
+
+At massive scale (1B+), AWS Lambda is cheapest but latency is TBD (not yet benchmarked). Fastly costs ~6x more at 1B/mo but delivers sub-10ms globally vs Lambda's single-region deployment.
+
+---
+
+## 7. Disclaimers
+
+- Pricing is from public rate cards as of April 2026; enterprise/negotiated rates may differ significantly.
+- Akamai Functions pricing requires a sales quote and is excluded from comparisons.
+- AWS Lambda costs do not include API Gateway/ALB charges needed for HTTP endpoints.
+- Fermyon Cloud beyond Growth tier (>1M/mo) requires enterprise contact.
+- Cloudflare Workers and AWS Lambda have NOT been benchmarked yet — latency is TBD.
+- Free tier calculations assume these are the only workloads on the account.
+- All costs are USD, pay-as-you-go, no reserved capacity or committed use discounts.

@@ -1,5 +1,6 @@
 use fastly::http::StatusCode;
 use fastly::{ConfigStore, Error, KVStore, Request, Response};
+use include_dir::{include_dir, Dir};
 use uuid::Uuid;
 
 use clipclap_gateway_core::{
@@ -7,8 +8,11 @@ use clipclap_gateway_core::{
     error::{map_upstream_status, GatewayError},
     handlers,
     pipeline::{self, ModerationRequest},
+    policy,
     types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
+
+static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
 const BACKEND_NAME: &str = "inference";
 const CONFIG_STORE: &str = "gateway_config";
@@ -21,7 +25,9 @@ const KV_STORE: &str = "moderation_cache";
 fn config() -> GatewayConfig {
     let store = ConfigStore::open(CONFIG_STORE);
     GatewayConfig {
-        platform: "fastly".into(),
+        platform: store
+            .get("gateway_platform")
+            .unwrap_or_else(|| "Fastly Compute".into()),
         region: store.get("gateway_region").unwrap_or_else(|| "unknown".into()),
     }
 }
@@ -103,6 +109,7 @@ fn main(req: Request) -> Result<Response, Error> {
         ("POST", "/gateway/moderate-cached") => Ok(handle_moderate_cached(req)),
         ("POST", "/api/clip/moderate") => Ok(handle_full_moderate(req)),
         ("POST", "/api/clip/classify") | ("POST", "/api/clap/classify") => Ok(handle_proxy(req)),
+        ("GET", _) => Ok(handle_static(&path)),
         _ => Ok(handle_not_found()),
     }
 }
@@ -177,7 +184,7 @@ fn handle_moderate(mut req: Request) -> Response {
         Err(err) => return error_resp(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, None);
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -198,8 +205,29 @@ fn handle_moderate_cached(mut req: Request) -> Response {
     let normalized = clipclap_gateway_core::normalize::normalize_labels(&mod_req.labels);
     let hash = clipclap_gateway_core::hash::content_hash(&normalized, None);
     let cached = kv_get(&hash);
+    let was_miss = cached.is_none();
 
     let resp = pipeline::moderate_cached(&mod_req, cached.as_ref(), &cfg, &rid, None);
+
+    if was_miss {
+        let cv = CachedVerdict::new(
+            hash,
+            clipclap_gateway_core::policy::PolicyResult {
+                verdict: resp.verdict.clone(),
+                flags: vec![],
+                blocked_terms: resp.moderation.blocked_terms.clone(),
+                confidence: resp.moderation.confidence,
+                processing_ms: resp.moderation.processing_ms,
+            },
+            resp.classification.clone(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        );
+        kv_put(&cv.hash, &cv);
+    }
+
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -235,6 +263,7 @@ fn handle_full_moderate(mut req: Request) -> Response {
         labels,
         nonce: rid.clone(),
         text: None,
+        ml: false,
     };
 
     let pre = pipeline::pre_moderate(&mod_req, None);
@@ -346,6 +375,50 @@ fn handle_proxy(mut req: Request) -> Response {
         .with_header("x-gateway-region", &cfg.region)
         .with_header("x-gateway-request-id", &rid)
         .with_body(resp_body)
+}
+
+// ---------------------------------------------------------------------------
+// Static file serving (embedded frontend)
+// ---------------------------------------------------------------------------
+
+fn content_type_for(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "json" => "application/json",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        _ => "application/octet-stream",
+    }
+}
+
+fn handle_static(path: &str) -> Response {
+    let file_path = match path {
+        "/" | "" => "index.html",
+        p => p.trim_start_matches('/'),
+    };
+
+    if let Some(file) = STATIC_DIR.get_file(file_path) {
+        let ct = content_type_for(file_path);
+        let mut resp = Response::from_status(StatusCode::OK)
+            .with_header("content-type", ct)
+            .with_body(file.contents());
+        if file_path.starts_with("assets/") {
+            resp.set_header("cache-control", "public, max-age=31536000, immutable");
+        }
+        resp
+    } else if let Some(file) = STATIC_DIR.get_file("index.html") {
+        // SPA fallback: serve index.html for unmatched paths
+        Response::from_status(StatusCode::OK)
+            .with_header("content-type", "text/html; charset=utf-8")
+            .with_body(file.contents())
+    } else {
+        handle_not_found()
+    }
 }
 
 // ---------------------------------------------------------------------------

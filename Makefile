@@ -1,4 +1,4 @@
-.PHONY: prereqs build build-frontend deploy-fermyon deploy-akamai test clean validate benchmark bench-multiregion scorecard runners-up runners-status runners-sync runners-down help
+.PHONY: prereqs build build-frontend deploy-fermyon deploy-akamai deploy-fastly test clean validate benchmark bench-multiregion scorecard runners-up runners-status runners-sync runners-down help
 
 # Default gateway URL (override with URL=...)
 URL ?= https://wasm-prompt-firewall-imjy4pe0.fermyon.app
@@ -37,6 +37,9 @@ deploy-fermyon:
 
 deploy-akamai:
 	$(MAKE) -C edge-gateway deploy-akamai
+
+deploy-fastly:
+	$(MAKE) -C edge-gateway deploy-fastly
 
 # ── Benchmark (single region, local machine) ─────────────────
 validate:
@@ -81,6 +84,7 @@ help:
 	@echo "  make build                           Build WASM gateway + frontend"
 	@echo "  make deploy-fermyon                  Build + deploy to Fermyon Cloud"
 	@echo "  make deploy-akamai                   Build + deploy to Akamai Functions"
+	@echo "  make deploy-fastly                   Build + deploy to Fastly Compute"
 	@echo "  make test                            Run Rust unit tests"
 	@echo ""
 	@echo "Benchmark (single region):"

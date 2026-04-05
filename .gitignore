@@ -100,6 +100,11 @@ edge-gateway/adapters/spin/static/
 edge-gateway/adapters/spin/.spin/
 edge-gateway/adapters/spin/.spin-aka/
 
+# --- Fastly build artifacts ---
+edge-gateway/adapters/fastly/pkg/
+edge-gateway/adapters/fastly/bin/
+edge-gateway/adapters/fastly/static/
+
 # --- ML model files (large binaries, downloaded/converted locally) ---
 edge-gateway/models/toxicity/*.onnx
 edge-gateway/models/toxicity/*.nnef.tar
