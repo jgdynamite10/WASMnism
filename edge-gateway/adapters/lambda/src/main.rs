@@ -1,9 +1,11 @@
 use aws_sdk_dynamodb::Client as DynamoClient;
 use aws_sdk_dynamodb::types::AttributeValue;
+use include_dir::{include_dir, Dir};
 use lambda_http::{
     http::StatusCode, run, service_fn, Body, Error, Request, Response,
 };
 use std::env;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 use clipclap_gateway_core::{
@@ -11,10 +13,72 @@ use clipclap_gateway_core::{
     error::{map_upstream_status, GatewayError},
     handlers,
     pipeline::{self, ModerationRequest},
+    toxicity::ToxicityClassifier,
     types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
 
+static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
+
 const DYNAMO_TABLE: &str = "moderation-cache";
+
+// ---------------------------------------------------------------------------
+// ML model loading (lazy, survives across warm-start invocations)
+// ---------------------------------------------------------------------------
+
+static CLASSIFIER: OnceLock<Option<ToxicityClassifier>> = OnceLock::new();
+static CLASSIFIER_ERROR: OnceLock<Option<String>> = OnceLock::new();
+
+fn get_classifier() -> Option<&'static ToxicityClassifier> {
+    CLASSIFIER
+        .get_or_init(|| {
+            let model_dir = env::var("ML_MODEL_PATH")
+                .unwrap_or_else(|_| "/var/task/models/toxicity".into());
+
+            let model_path = format!("{}/model.nnef.tar", model_dir);
+            let vocab_path = format!("{}/vocab.txt", model_dir);
+
+            let model_bytes = match std::fs::read(&model_path) {
+                Ok(b) => b,
+                Err(e) => {
+                    let msg = format!("model read {model_path}: {e}");
+                    let _ = CLASSIFIER_ERROR.set(Some(msg));
+                    return None;
+                }
+            };
+            let vocab = match std::fs::read_to_string(&vocab_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    let msg = format!("vocab read {vocab_path}: {e}");
+                    let _ = CLASSIFIER_ERROR.set(Some(msg));
+                    return None;
+                }
+            };
+            let info = format!(
+                "model={} bytes, vocab={} lines",
+                model_bytes.len(),
+                vocab.lines().count()
+            );
+            match ToxicityClassifier::from_nnef_tar(&model_bytes, &vocab) {
+                Ok(c) => {
+                    let _ = CLASSIFIER_ERROR.set(Some(format!("ok: {info}")));
+                    Some(c)
+                }
+                Err(e) => {
+                    let _ = CLASSIFIER_ERROR.set(Some(format!("init failed ({info}): {e}")));
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+fn classifier_status() -> String {
+    match CLASSIFIER_ERROR.get() {
+        Some(Some(msg)) => msg.clone(),
+        Some(None) => "not attempted".into(),
+        None => "not loaded yet".into(),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,7 +86,7 @@ const DYNAMO_TABLE: &str = "moderation-cache";
 
 fn config() -> GatewayConfig {
     GatewayConfig {
-        platform: "lambda".into(),
+        platform: env::var("GATEWAY_PLATFORM").unwrap_or_else(|_| "AWS Lambda".into()),
         region: env::var("GATEWAY_REGION").unwrap_or_else(|_| "unknown".into()),
     }
 }
@@ -125,6 +189,7 @@ async fn handler(req: Request, dynamo: &DynamoClient) -> Result<Response<Body>, 
         ("POST", "/api/clip/classify") | ("POST", "/api/clap/classify") => {
             Ok(handle_proxy(&req).await)
         }
+        ("GET", _) => Ok(handle_static(&path)),
         _ => Ok(handle_not_found()),
     }
 }
@@ -136,7 +201,24 @@ async fn handler(req: Request, dynamo: &DynamoClient) -> Result<Response<Body>, 
 fn handle_health() -> Response<Body> {
     let cfg = config();
     let rid = request_id();
-    json_ok(&handlers::health(&cfg), &rid, &cfg)
+
+    let model_dir = env::var("ML_MODEL_PATH")
+        .unwrap_or_else(|_| "/var/task/models/toxicity".into());
+    let model_exists =
+        std::fs::metadata(format!("{}/model.nnef.tar", model_dir)).is_ok();
+    let vocab_exists =
+        std::fs::metadata(format!("{}/vocab.txt", model_dir)).is_ok();
+    let already_loaded = CLASSIFIER.get().map(|o| o.is_some()).unwrap_or(false);
+
+    let mut health = serde_json::to_value(&handlers::health(&cfg)).unwrap_or_default();
+    if let Some(obj) = health.as_object_mut() {
+        obj.insert("ml_model_file".into(), model_exists.into());
+        obj.insert("ml_vocab_file".into(), vocab_exists.into());
+        obj.insert("ml_classifier_ready".into(), already_loaded.into());
+        obj.insert("ml_status".into(), classifier_status().into());
+    }
+
+    json_ok(&health, &rid, &cfg)
 }
 
 fn handle_echo(req: &Request) -> Response<Body> {
@@ -199,7 +281,7 @@ fn handle_moderate(req: &Request) -> Response<Body> {
         Err(err) => return error_resp(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -220,8 +302,29 @@ async fn handle_moderate_cached(req: &Request, dynamo: &DynamoClient) -> Respons
     let normalized = clipclap_gateway_core::normalize::normalize_labels(&mod_req.labels);
     let hash = clipclap_gateway_core::hash::content_hash(&normalized, None);
     let cached = dynamo_get(dynamo, &hash).await;
+    let was_miss = cached.is_none();
 
     let resp = pipeline::moderate_cached(&mod_req, cached.as_ref(), &cfg, &rid, None);
+
+    if was_miss {
+        let cv = CachedVerdict::new(
+            hash,
+            clipclap_gateway_core::policy::PolicyResult {
+                verdict: resp.verdict.clone(),
+                flags: vec![],
+                blocked_terms: resp.moderation.blocked_terms.clone(),
+                confidence: resp.moderation.confidence,
+                processing_ms: resp.moderation.processing_ms,
+            },
+            resp.classification.clone(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        );
+        dynamo_put(dynamo, &cv.hash, &cv).await;
+    }
+
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -255,10 +358,13 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
         return error_resp(&err, &rid, &cfg);
     }
 
+    let text_field = extract_text_from_body(&content_type, &raw_body);
+
     let mod_req = ModerationRequest {
         labels,
         nonce: rid.clone(),
-        text: None,
+        text: text_field,
+        ml: true,
     };
 
     let pre = pipeline::pre_moderate(&mod_req, None);
@@ -386,6 +492,53 @@ async fn handle_proxy(req: &Request) -> Response<Body> {
 }
 
 // ---------------------------------------------------------------------------
+// Static file serving (embedded frontend)
+// ---------------------------------------------------------------------------
+
+fn content_type_for(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "json" => "application/json",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        _ => "application/octet-stream",
+    }
+}
+
+fn handle_static(path: &str) -> Response<Body> {
+    let file_path = match path {
+        "/" | "" => "index.html",
+        p => p.trim_start_matches('/'),
+    };
+
+    if let Some(file) = STATIC_DIR.get_file(file_path) {
+        let ct = content_type_for(file_path);
+        let mut builder = Response::builder()
+            .status(200)
+            .header("content-type", ct);
+        if file_path.starts_with("assets/") {
+            builder = builder.header("cache-control", "public, max-age=31536000, immutable");
+        }
+        builder
+            .body(Body::Binary(file.contents().to_vec()))
+            .unwrap_or_else(|_| Response::builder().status(500).body(Body::Empty).unwrap())
+    } else if let Some(file) = STATIC_DIR.get_file("index.html") {
+        Response::builder()
+            .status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(Body::Binary(file.contents().to_vec()))
+            .unwrap_or_else(|_| Response::builder().status(500).body(Body::Empty).unwrap())
+    } else {
+        handle_not_found()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Catch-all
 // ---------------------------------------------------------------------------
 
@@ -460,6 +613,37 @@ fn extract_labels_from_multipart(
         }
     }
     Err("No 'labels' field found in multipart body".into())
+}
+
+fn extract_text_from_body(content_type: &str, body: &[u8]) -> Option<String> {
+    if content_type.contains("application/json") {
+        let parsed: serde_json::Value = serde_json::from_slice(body).ok()?;
+        parsed.get("text").and_then(|v| v.as_str()).map(String::from)
+    } else if content_type.contains("multipart/form-data") {
+        let boundary = content_type.split("boundary=").nth(1)?.trim_matches('"');
+        let body_str = String::from_utf8_lossy(body);
+        let delimiter = format!("--{boundary}");
+        for part in body_str.split(&delimiter) {
+            if !part.contains("name=\"text\"") && !part.contains("name=text") {
+                continue;
+            }
+            if let Some(idx) = part.find("\r\n\r\n") {
+                let value = part[idx + 4..].trim_end_matches("\r\n").trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+            if let Some(idx) = part.find("\n\n") {
+                let value = part[idx + 2..].trim_end_matches('\n').trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+        None
+    } else {
+        None
+    }
 }
 
 fn parse_labels_string(s: &str) -> Result<Vec<String>, String> {

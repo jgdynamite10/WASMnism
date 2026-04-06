@@ -298,33 +298,55 @@ curl -si https://morally-civil-urchin.edgecompute.app/gateway/health | grep x-se
 
 See `results/fastly/edge_verification.md` (private) for full header dumps from all regions.
 
+### AWS Lambda — Single-Region Native ARM64 (Regional Baseline)
+
+```
+Client --> [Lambda Function URL] --> Lambda ARM64 --> DynamoDB (cache)
+```
+
+- **Not WASM**: Lambda runs a native ARM64 binary compiled from the same Rust codebase
+- **Single region**: Deployed to us-east-1 (N. Virginia)
+- **Zero scheduling overhead**: Lambda environments stay warm for ~15 minutes
+- **Sub-millisecond processing**: Native ARM64 is so fast the processing time reports as 0.0ms
+- **DynamoDB caching**: Uses DynamoDB on-demand for verdict caching (instead of KV stores)
+- **Function URL**: Direct HTTPS endpoint, no API Gateway (for fair benchmarking)
+- **Embedded ML**: ToxicityClassifier loaded from `/var/task/models/toxicity/` via `OnceLock` (same lazy-init pattern as Spin)
+- **Frontend dashboard**: Svelte UI embedded via `include_dir` (same approach as Fastly)
+- **ML inference**: 219ms on native ARM64 (3.6x faster than WASM)
+- Remote clients pay full network RTT: ~70ms from EU, ~210ms from AP
+- Deployed via `cargo lambda deploy` with `--include models/toxicity` and `--s3-bucket` for the 53MB+ package
+
 ### Why This Architecture Difference Explains the Performance Gap
 
-| Step | Fastly (single-tier) | Akamai (two-tier) | Fermyon (single-region) |
-|------|---------------------|-------------------|------------------------|
-| TLS termination | At PoP (~1-3ms) | At edge PoP (~1-3ms) | At compute (~1-3ms) |
-| Route to compute | **N/A (same node)** | 1-18ms internal hop | N/A (single region) |
-| Schedule WASM | **~0ms (pre-warmed)** | ~300-380ms (on-demand) | ~1,000-1,100ms (on-demand) |
-| Execute logic | ~2-5ms | ~2-3ms | ~5ms |
-| **Total round-trip** | **~5-15ms** | **~320-400ms** | **~1,000-1,350ms** |
+| Step | Fastly (single-tier) | Akamai (two-tier) | Fermyon (single-region) | AWS Lambda (regional) |
+|------|---------------------|-------------------|------------------------|----------------------|
+| TLS termination | At PoP (~1-3ms) | At edge PoP (~1-3ms) | At compute (~1-3ms) | At Lambda URL (~1ms) |
+| Route to compute | **N/A (same node)** | 1-18ms internal hop | N/A (single region) | N/A (single region) |
+| Schedule WASM/runtime | **~0ms (pre-warmed)** | ~300-380ms (on-demand) | ~1,000-1,100ms (on-demand) | **~0ms (warm Lambda)** |
+| Execute logic | ~2-5ms | ~2-3ms | ~5ms | **<0.1ms (native)** |
+| **Total round-trip** | **~5-15ms** | **~320-400ms** | **~1,000-1,350ms** | **~31ms** (us-ord)† |
+
+†Lambda round-trip from remote regions: ~104ms (EU), ~246ms (AP) — dominated by network RTT.
 
 Server processing is similar (2-5ms) on all platforms. The 45-128x performance gap comes entirely from **platform scheduling overhead** — the invisible tax of Akamai/Fermyon's on-demand dispatch vs Fastly's pre-warmed isolates.
 
 ### Platform Comparison
 
-| Aspect | Fermyon Cloud | Akamai Functions | Fastly Compute |
-|--------|--------------|-----------------|---------------|
-| Architecture | Single-region | Two-tier (edge + compute) | **Single-tier (PoP = compute)** |
-| WASM execution | US-ORD only | Compute regions (3+) | **Directly at PoP** |
-| Scheduling model | On-demand (~1,100ms) | On-demand (~385ms) | **Pre-warmed (~0ms)** |
-| Compute regions | 1 (us-ord) | 3+ (us-ord, de-fra-2, sg-sin-2) | 4+ PoPs (DFW, CHI, FRA, SIN verified) |
-| Edge layer | None | 4,200+ Akamai CDN PoPs | Fastly PoP network |
-| Auto-replication on deploy | No | Yes | Yes |
-| Nearest-region routing | No | Yes (akaalb cookie) | Yes (anycast DNS) |
-| TLS termination | At compute | At edge PoP | At PoP |
-| Filesystem access | Yes | Yes | No |
-| Deploy command | `spin cloud deploy` | `spin aka deploy` | `fastly compute publish` |
-| Proof header | None | `Akamai-Request-BC` + `akaalb` | `x-served-by` |
+| Aspect | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
+|--------|--------------|-----------------|---------------|------------|
+| Architecture | Single-region | Two-tier (edge + compute) | **Single-tier (PoP = compute)** | Single-region |
+| Runtime | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | **Native ARM64** |
+| Execution location | US-ORD only | Compute regions (3+) | **Directly at PoP** | us-east-1 only |
+| Scheduling model | On-demand (~1,100ms) | On-demand (~385ms) | **Pre-warmed (~0ms)** | **Warm (~0ms)** |
+| Compute regions | 1 (us-ord) | 3+ (us-ord, de-fra-2, sg-sin-2) | 4+ PoPs (DFW, CHI, FRA, SIN) | 1 (us-east-1) |
+| Edge layer | None | 4,200+ Akamai CDN PoPs | Fastly PoP network | None |
+| Auto-replication | No | Yes | Yes | No |
+| Nearest-region routing | No | Yes (akaalb cookie) | Yes (anycast DNS) | No |
+| TLS termination | At compute | At edge PoP | At PoP | At Function URL |
+| Filesystem access | Yes | Yes | No | Yes |
+| Caching backend | Spin KV | Spin KV | Fastly KV Store | DynamoDB |
+| Frontend dashboard | Spin static fileserver | Spin static fileserver | `include_dir` embedded | `include_dir` embedded |
+| Deploy command | `spin cloud deploy` | `spin aka deploy` | `fastly compute publish` | `cargo lambda deploy` |
 
 ---
 
@@ -462,28 +484,36 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
 
 ## 6. Performance Results Summary
 
-Measured April 2-4, 2026. Same WASM binary on both platforms.
+Measured April 2-5, 2026. Same core library across all platforms.
 
-### Rules-Only Pipeline (what customers deploy)
+### Rules-Only Pipeline — Policy Endpoint p50 (median of 7 runs)
 
-| Metric | Fermyon Cloud | Akamai Functions | Advantage |
-|--------|--------------|-----------------|-----------|
-| Server processing p50 | 5.5ms | **2.3ms** | Akamai 58% faster |
-| Round-trip p50 (us-ord) | 1,100ms | **388ms** | Akamai 2.8x faster |
-| Round-trip p50 (eu-central) | 1,060ms | **401ms** | Akamai 2.6x faster |
-| Round-trip p50 (ap-south) | 1,350ms | **388ms** | Akamai 3.5x faster |
-| Health rps (eu-central) | 81.6/s | **1,474.7/s** | Akamai 18x higher |
-| Concurrency p95 (50 VUs) | 6,310ms | **880ms** | Akamai 7x better |
-| Error rate | 0% | 0% | Tie |
+| Region | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
+|--------|--------------|-----------------|---------------|------------|
+| us-ord (Chicago) | 1,100ms | 388ms | **8.6ms** | 30.9ms |
+| eu-central (Frankfurt) | 1,060ms | 401ms | **5.7ms** | 103.3ms |
+| ap-south (Singapore) | 1,350ms | 388ms | **6.1ms** | 246.2ms |
 
-### Embedded ML (stretch tests)
+### Throughput (requests/sec, policy endpoint)
 
-| Metric | Fermyon Cloud | Akamai Functions | Advantage |
-|--------|--------------|-----------------|-----------|
-| ML inference p50 | 1,760ms | **779ms** | Akamai 2.3x faster |
-| Jitter (p95/p50) | 1.35x | **1.06x** | Akamai 50% lower |
+| Region | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
+|--------|--------------|-----------------|---------------|------------|
+| us-ord | 9/s | 25/s | **1,026/s** | 310/s |
+| eu-central | 9/s | 25/s | **1,581/s** | 95/s |
+| ap-south | 7/s | 25/s | **1,369/s** | 40/s |
 
-Full results: `results/fermyon_vs_akamai_scorecard.md` (local, gitignored).
+### Embedded ML (stretch tests, Fermyon + Akamai + Lambda)
+
+| Metric | Fermyon Cloud | Akamai Functions | AWS Lambda (ARM64) |
+|--------|--------------|-----------------|-------------------|
+| ML inference p50 | 887ms | 779ms | **219ms** |
+| ML throughput | 3.6/s | 4.3/s | **17.2/s** |
+| ML cold start p50 | 1,455ms | 1,187ms | **261ms** |
+| Jitter (p95/p50) | **1.06x** | **1.05x** | 1.51x |
+
+Native ARM64 runs ML inference 3.6x faster than the best WASM platform (Akamai). Fastly cannot run ML (no filesystem access).
+
+Full results: `results/four_platform_scorecard.md` (local, gitignored).
 
 ---
 

@@ -105,6 +105,10 @@ edge-gateway/adapters/fastly/pkg/
 edge-gateway/adapters/fastly/bin/
 edge-gateway/adapters/fastly/static/
 
+# --- Lambda build artifacts ---
+edge-gateway/adapters/lambda/static/
+edge-gateway/adapters/lambda/models/
+
 # --- ML model files (large binaries, downloaded/converted locally) ---
 edge-gateway/models/toxicity/*.onnx
 edge-gateway/models/toxicity/*.nnef.tar

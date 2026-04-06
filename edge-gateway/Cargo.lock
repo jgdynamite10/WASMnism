@@ -675,6 +675,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-dynamodb",
  "clipclap-gateway-core",
+ "include_dir",
  "lambda_http",
  "reqwest",
  "serde",

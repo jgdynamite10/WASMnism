@@ -29,7 +29,7 @@ echo ""
 ML_ENABLED="true"
 if [ "${PLATFORM}" = "fastly" ]; then
     ML_ENABLED="false"
-    echo "Note: ML toxicity checks disabled (Fastly Compute has no filesystem for model)"
+    echo "Note: ML toxicity checks disabled (Fastly adapter has no filesystem for ML model)"
     echo ""
 fi
 
