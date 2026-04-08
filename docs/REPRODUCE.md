@@ -27,6 +27,9 @@ brew tap cargo-lambda/cargo-lambda && brew install cargo-lambda
 # AWS CLI (for Lambda infrastructure)
 brew install awscli
 
+# Wrangler CLI (for Cloudflare Workers deployment — installed via npx, no global install needed)
+# npx wrangler login
+
 # Node.js (for frontend)
 # macOS:
 brew install node
@@ -85,6 +88,9 @@ make deploy-fastly
 
 # Or deploy to AWS Lambda (requires AWS CLI configured + cargo-lambda installed)
 make deploy-lambda
+
+# Or deploy to Cloudflare Workers (requires `npx wrangler login` first)
+make deploy-workers
 ```
 
 ### 2. Run the full pipeline
@@ -95,8 +101,9 @@ make benchmark PLATFORM=fermyon URL=https://your-gateway.fermyon.app
 make benchmark PLATFORM=akamai  URL=https://your-gateway.fwf.app
 make benchmark PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 make benchmark PLATFORM=lambda  URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws
+make benchmark PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 
-# Primary + stretch (ML) suite (~60 min) — not available on Fastly
+# Primary + stretch (ML) suite (~60 min) — not available on Fastly or Workers
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml"
 make benchmark PLATFORM=lambda URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws BENCH_FLAGS="--ml"
 
@@ -134,6 +141,7 @@ make bench-multiregion PLATFORM=fermyon URL=https://your-gateway.fermyon.app BEN
 make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
 make bench-multiregion PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 make bench-multiregion PLATFORM=lambda  URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws --cold
+make bench-multiregion PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 ```
 
 This SSHs into each runner, executes the full reproduce pipeline, and
@@ -192,13 +200,13 @@ CHECKSUMS
 
 ### Key metrics
 
-| Metric | What it means | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
-|--------|--------------|---------------|-----------------|---------------|------------|
-| **Server processing p50** | Time the gateway spends on your request (rules only) | 5.4-5.5ms | 2.3-2.4ms | 2.6ms | 0.0ms (native) |
-| **Round-trip p50** | Total client-to-server-to-client time | Depends on distance to US-ORD | Depends on nearest compute region | Depends on nearest PoP | Depends on distance to us-east-1 |
-| **ML inference p50** | Time for the neural network forward pass | 1,670-1,810ms | 779-789ms | N/A (no FS) | 219ms (native ARM64) |
-| **Jitter (p95/p50)** | Latency consistency — lower is better | 1.28-1.35x | 1.05-1.11x | 1.39-2.10x | 1.33x |
-| **Error rate** | Percentage of failed requests | 0% | 0% | 0% | 0% |
+| Metric | What it means | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda | Cloudflare Workers |
+|--------|--------------|---------------|-----------------|---------------|------------|-------------------|
+| **Server processing p50** | Time the gateway spends on your request (rules only) | 5.4-5.5ms | 2.3-2.4ms | 2.6ms | 0.0ms (native) | <1ms |
+| **Round-trip p50** | Total client-to-server-to-client time | Depends on distance to US-ORD | Depends on nearest compute region | Depends on nearest PoP | Depends on distance to us-east-1 | Depends on nearest PoP |
+| **ML inference p50** | Time for the neural network forward pass | 887ms | 779-789ms | N/A (no FS) | 219ms (native ARM64) | N/A (no WASI) |
+| **Jitter (p95/p50)** | Latency consistency — lower is better | 1.28-1.35x | 1.05-1.11x | 1.39-2.10x | 1.33x | 1.68-1.89x |
+| **Error rate** | Percentage of failed requests | 0% | 0% | 0% | 0% | 0% |
 
 ### Network latency caveat
 
