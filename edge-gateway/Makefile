@@ -9,7 +9,7 @@ test:
 
 clean:
 	cargo clean
-	rm -rf adapters/spin/static adapters/fastly/static adapters/lambda/static adapters/lambda/models
+	rm -rf adapters/spin/static adapters/fastly/static adapters/lambda/static adapters/lambda/models adapters/workers/static
 
 # ── Frontend (build + copy to adapter static dirs) ───────────
 build-frontend:
@@ -20,6 +20,8 @@ build-frontend:
 	cp -r ../frontend/dist/* adapters/fastly/static/
 	mkdir -p adapters/lambda/static
 	cp -r ../frontend/dist/* adapters/lambda/static/
+	mkdir -p adapters/workers/static
+	cp -r ../frontend/dist/* adapters/workers/static/
 
 # ── Spin (Akamai Functions) ──────────────────────────────────
 build-spin: build-frontend
@@ -53,7 +55,7 @@ deploy-fastly: build-frontend
 build-workers:
 	cargo build --target wasm32-unknown-unknown --release -p clipclap-gateway-workers
 
-deploy-workers:
+deploy-workers: build-frontend
 	cd adapters/workers && npx wrangler deploy
 
 # ── AWS Lambda ───────────────────────────────────────────────

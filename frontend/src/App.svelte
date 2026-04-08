@@ -86,7 +86,7 @@
 
         <div class="card info-card">
           <h3>About This Benchmark</h3>
-          <p class="info-desc">This gateway runs identically on Fermyon Cloud, Fastly Compute, Cloudflare Workers, and AWS Lambda. The scorecard measures overhead across all four platforms.</p>
+          <p class="info-desc">This gateway runs identically on Fermyon Cloud, Akamai Functions, Fastly Compute, Cloudflare Workers, and AWS Lambda. The scorecard measures overhead across all five platforms.</p>
           <div class="tech-pills">
             <span class="pill">Rust</span>
             <span class="pill">WASM</span>

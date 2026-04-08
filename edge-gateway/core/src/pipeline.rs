@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cache::CachedVerdict;
 use crate::handlers::mock_classify;
 use crate::hash::content_hash;
 use crate::normalize::normalize_labels;
-use crate::policy::{self, merge_results, PolicyConfig, PolicyFlag, PolicyResult, Verdict};
+use crate::policy::{self, merge_results, PolicyConfig, PolicyResult, Verdict};
+#[cfg(feature = "ml")]
+use crate::policy::PolicyFlag;
+use crate::timing::{epoch_ms, Timer};
 use crate::toxicity::ToxicityClassifier;
 use crate::types::{ClassificationResponse, GatewayConfig};
 
@@ -87,7 +89,7 @@ pub struct PreModerationResult {
     pub normalized_labels: Vec<String>,
     pub hash: String,
     pub pre_policy: PolicyResult,
-    pub start_time: Instant,
+    pub start_time: Timer,
     pub user_label_count: usize,
 }
 
@@ -98,10 +100,7 @@ impl PreModerationResult {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    epoch_ms()
 }
 
 fn gateway_info(config: &GatewayConfig, request_id: &str) -> GatewayResponseInfo {
@@ -134,7 +133,7 @@ pub fn moderate_policy_only(
     content: Option<&[u8]>,
     classifier: Option<&ToxicityClassifier>,
 ) -> ModerationResponse {
-    let start = Instant::now();
+    let start = Timer::now();
     let normalized = normalize_labels(&req.labels);
     let hash = content_hash(&normalized, content);
 
@@ -143,7 +142,10 @@ pub fn moderate_policy_only(
     let (ml_policy, ml_info) = if !req.ml || pre.verdict == Verdict::Block {
         (None, None)
     } else {
-        run_ml_toxicity(classifier, req.text.as_deref(), &req.labels)
+        #[cfg(feature = "ml")]
+        { run_ml_toxicity(classifier, req.text.as_deref(), &req.labels) }
+        #[cfg(not(feature = "ml"))]
+        { let _ = classifier; (None, None) }
     };
 
     let mock_classification = mock_classify(&normalized);
@@ -155,7 +157,7 @@ pub fn moderate_policy_only(
         merged = merge_results(&merged, ml);
     }
 
-    let total_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let total_ms = start.elapsed_ms();
 
     ModerationResponse {
         verdict: merged.verdict.clone(),
@@ -190,12 +192,12 @@ pub fn moderate_cached(
     request_id: &str,
     content: Option<&[u8]>,
 ) -> ModerationResponse {
-    let start = Instant::now();
+    let start = Timer::now();
     let normalized = normalize_labels(&req.labels);
     let hash = content_hash(&normalized, content);
 
     if let Some(cv) = cached {
-        let total_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let total_ms = start.elapsed_ms();
         return ModerationResponse {
             verdict: cv.verdict.clone(),
             moderation: ModerationInfo {
@@ -227,7 +229,7 @@ pub fn pre_moderate(
     req: &ModerationRequest,
     content: Option<&[u8]>,
 ) -> PreModerationResult {
-    let start = Instant::now();
+    let start = Timer::now();
     let user_label_count = req.labels.len();
     let normalized = normalize_labels(&req.labels);
     let hash = content_hash(&normalized, content);
@@ -268,7 +270,7 @@ pub fn post_moderate(
 
     // Merge all three: pre-check + post-check + safety check (strictest wins)
     let merged = merge_results(&merge_results(&pre.pre_policy, &post), &safety_policy);
-    let total_ms = pre.start_time.elapsed().as_secs_f64() * 1000.0;
+    let total_ms = pre.start_time.elapsed_ms();
 
     let safety_scores: Vec<SafetyScore> = safety_results.iter().map(|r| SafetyScore {
         label: r.label.clone(),
@@ -310,7 +312,7 @@ pub fn blocked_response(
     config: &GatewayConfig,
     request_id: &str,
 ) -> ModerationResponse {
-    let total_ms = pre.start_time.elapsed().as_secs_f64() * 1000.0;
+    let total_ms = pre.start_time.elapsed_ms();
 
     ModerationResponse {
         verdict: pre.pre_policy.verdict.clone(),
@@ -336,9 +338,12 @@ pub fn blocked_response(
 // ML toxicity scoring helper
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "ml")]
 const ML_TOXIC_THRESHOLD: f64 = 0.65;
+#[cfg(feature = "ml")]
 const ML_SEVERE_THRESHOLD: f64 = 0.45;
 
+#[cfg(feature = "ml")]
 fn run_ml_toxicity(
     classifier: Option<&ToxicityClassifier>,
     text: Option<&str>,

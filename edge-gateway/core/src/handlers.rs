@@ -1,12 +1,5 @@
+use crate::timing::epoch_ms;
 use crate::types::*;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 fn round3(v: f64) -> f64 {
     (v * 1_000.0).round() / 1_000.0
@@ -25,7 +18,7 @@ pub fn health(config: &GatewayConfig) -> HealthResponse {
         status: "healthy".into(),
         platform: config.platform.clone(),
         region: config.region.clone(),
-        timestamp_ms: now_ms(),
+        timestamp_ms: epoch_ms(),
     }
 }
 
@@ -42,7 +35,7 @@ pub fn echo(req: &EchoRequest, config: &GatewayConfig, request_id: &str) -> Echo
         gateway: GatewayInfo {
             platform: config.platform.clone(),
             region: config.region.clone(),
-            timestamp_ms: now_ms(),
+            timestamp_ms: epoch_ms(),
             request_id: request_id.to_string(),
         },
     }

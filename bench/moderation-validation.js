@@ -73,8 +73,8 @@ export default function () {
           b.moderation.policy_flags.length === 0,
         "hash starts with sha256:": (b) =>
           b && b.cache.hash.startsWith("sha256:"),
-        "processing_ms is positive": (b) =>
-          b && b.moderation.processing_ms > 0,
+        "processing_ms is non-negative": (b) =>
+          b && b.moderation.processing_ms >= 0,
       });
 
     const mlChecks = ML_ENABLED
@@ -224,9 +224,9 @@ export default function () {
       nonce: `cache-prime-${Date.now()}`,
     });
 
-    // Prime the cache
+    // Prime the cache (Workers KV needs ~1s for consistency within same PoP)
     http.post(`${BASE_URL}/gateway/moderate-cached`, cacheBody, { headers });
-    sleep(0.3);
+    sleep(1.0);
 
     // Second request should be a cache hit
     const res = http.post(

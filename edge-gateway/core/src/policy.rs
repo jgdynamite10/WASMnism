@@ -131,7 +131,7 @@ impl PolicyConfig {
         &self,
         safety_results: &[crate::types::ClassificationResult],
     ) -> PolicyResult {
-        let start = std::time::Instant::now();
+        let start = crate::timing::Timer::now();
         let mut flags = Vec::new();
         let mut flagged = Vec::new();
         let mut worst = 0.0_f64;
@@ -161,7 +161,7 @@ impl PolicyConfig {
             flags,
             blocked_terms: flagged,
             confidence: worst,
-            processing_ms: start.elapsed().as_secs_f64() * 1000.0,
+            processing_ms: start.elapsed_ms(),
         }
     }
 }
@@ -258,7 +258,7 @@ fn injection_matcher() -> &'static AhoCorasick {
 // ---------------------------------------------------------------------------
 
 pub fn pre_check(labels: &[String], text: Option<&str>) -> PolicyResult {
-    let start = std::time::Instant::now();
+    let start = crate::timing::Timer::now();
     let mut flags = Vec::new();
     let mut blocked = Vec::new();
     let mut worst_confidence = 0.0_f64;
@@ -305,7 +305,7 @@ pub fn pre_check(labels: &[String], text: Option<&str>) -> PolicyResult {
         Verdict::Allow
     };
 
-    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+    let elapsed = start.elapsed_ms();
 
     PolicyResult {
         verdict,
@@ -324,7 +324,7 @@ pub fn post_check(
     classification: &ClassificationResponse,
     config: &PolicyConfig,
 ) -> PolicyResult {
-    let start = std::time::Instant::now();
+    let start = crate::timing::Timer::now();
     let mut flags = Vec::new();
     let mut flagged_labels = Vec::new();
     let mut worst_confidence = 0.0_f64;
@@ -350,7 +350,7 @@ pub fn post_check(
         Verdict::Allow
     };
 
-    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+    let elapsed = start.elapsed_ms();
 
     PolicyResult {
         verdict,

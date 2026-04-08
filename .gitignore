@@ -109,6 +109,10 @@ edge-gateway/adapters/fastly/static/
 edge-gateway/adapters/lambda/static/
 edge-gateway/adapters/lambda/models/
 
+# --- Workers build artifacts ---
+edge-gateway/adapters/workers/static/
+edge-gateway/adapters/workers/.wrangler/
+
 # --- ML model files (large binaries, downloaded/converted locally) ---
 edge-gateway/models/toxicity/*.onnx
 edge-gateway/models/toxicity/*.nnef.tar

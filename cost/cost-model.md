@@ -202,17 +202,17 @@ The real question: what do you get for your dollar?
 | Platform | Monthly Cost | Policy p50 | Cost per 1M | Effective $/request |
 |----------|-------------|-----------|-------------|---------------------|
 | **Fastly Compute** | **$0.00** | **8.6ms** | **$0.00** | **$0.00** |
-| AWS Lambda | ~$0.06 | TBD | ~$0.06 | $0.00000006 |
-| Cloudflare Workers | $5.00 | TBD | $5.00 | $0.000005 |
+| AWS Lambda | ~$0.06 | 30.9ms | ~$0.06 | $0.00000006 |
+| Cloudflare Workers | $5.00 | **6.6ms** | $5.00 | $0.000005 |
 | Fermyon Cloud | $19.38 | 1,100ms | $19.38 | $0.00001938 |
 
 ### At 100M requests/month
 
 | Platform | Monthly Cost | Policy p50 | Cost per req | Latency × Cost Score |
 |----------|-------------|-----------|-------------|---------------------|
-| **Fastly Compute** | $159 | **8.6ms** | $0.0000016 | **Best** (fast + cheap) |
-| AWS Lambda | ~$27 | TBD | $0.00000027 | TBD |
-| Cloudflare Workers | ~$39 | TBD | $0.00000039 | TBD |
+| **Cloudflare Workers** | ~$39 | **6.6ms** | $0.00000039 | **Best** (fastest + mid-cost) |
+| **Fastly Compute** | $159 | 8.6ms | $0.0000016 | Fast but 4x pricier than Workers |
+| AWS Lambda | ~$27 | 30.9ms | $0.00000027 | Cheapest but single-region |
 | Fermyon Cloud | Enterprise | 1,100ms | Unknown | Slow + unknown price |
 
 ---
@@ -246,12 +246,12 @@ At every scale tested, **Fastly Compute** delivers the best price-performance ra
 
 | Scale | Cheapest | Fastest | Best price-performance |
 |-------|----------|---------|----------------------|
-| 1M/mo | Fastly ($0) | Fastly (8.6ms) | **Fastly** |
-| 10M/mo | Fastly ($0) | Fastly (8.6ms) | **Fastly** |
-| 100M/mo | Lambda ($27) | Fastly (8.6ms) | **Depends on priority** |
-| 1B/mo | Lambda ($266) | Fastly (8.6ms) | **Lambda if cost-first, Fastly if latency-first** |
+| 1M/mo | Fastly ($0) | Workers (6.6ms) | **Fastly** (free tier) |
+| 10M/mo | Fastly ($0) | Workers (6.6ms) | **Fastly** (free tier) |
+| 100M/mo | Lambda ($27) | Workers (6.6ms) | **Workers** ($39, 6.6ms global) |
+| 1B/mo | Lambda ($270) | Workers (6.6ms) | **Workers if latency matters, Lambda if cost-first** |
 
-At massive scale (1B+), AWS Lambda is cheapest but latency is TBD (not yet benchmarked). Fastly costs ~6x more at 1B/mo but delivers sub-10ms globally vs Lambda's single-region deployment.
+At massive scale (1B+), AWS Lambda is cheapest ($270/mo) but serves a single region (31ms from Chicago, 246ms from Singapore). Workers costs $370/mo — 37% more — but delivers 6.6ms globally. Fastly at $1,780/mo is 4.8x more expensive than Workers with comparable latency.
 
 ---
 
@@ -261,6 +261,6 @@ At massive scale (1B+), AWS Lambda is cheapest but latency is TBD (not yet bench
 - Akamai Functions pricing requires a sales quote and is excluded from comparisons.
 - AWS Lambda costs do not include API Gateway/ALB charges needed for HTTP endpoints.
 - Fermyon Cloud beyond Growth tier (>1M/mo) requires enterprise contact.
-- Cloudflare Workers and AWS Lambda have NOT been benchmarked yet — latency is TBD.
+- All five platforms have been benchmarked. See `results/five_platform_scorecard.md` for full data.
 - Free tier calculations assume these are the only workloads on the account.
 - All costs are USD, pay-as-you-go, no reserved capacity or committed use discounts.

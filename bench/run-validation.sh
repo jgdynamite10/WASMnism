@@ -25,11 +25,11 @@ fi
 echo "Health check passed"
 echo ""
 
-# Fastly Compute has no filesystem access for the ML model
+# Fastly and Workers have no filesystem access for the ML model
 ML_ENABLED="true"
-if [ "${PLATFORM}" = "fastly" ]; then
+if [ "${PLATFORM}" = "fastly" ] || [ "${PLATFORM}" = "workers" ]; then
     ML_ENABLED="false"
-    echo "Note: ML toxicity checks disabled (Fastly adapter has no filesystem for ML model)"
+    echo "Note: ML toxicity checks disabled (${PLATFORM} adapter has no filesystem for ML model)"
     echo ""
 fi
 

@@ -99,7 +99,7 @@ impl ToxicityClassifier {
     /// Score a text prompt for toxicity. Returns probabilities (0.0–1.0) for
     /// each category after applying sigmoid to raw logits.
     pub fn classify(&self, text: &str) -> Result<ToxicityScores, String> {
-        let start = std::time::Instant::now();
+        let start = crate::timing::Timer::now();
 
         let enc = self.tokenizer.encode(text);
 
@@ -134,7 +134,7 @@ impl ToxicityClassifier {
             .to_array_view::<f32>()
             .map_err(|e| format!("read output: {e}"))?;
 
-        let inference_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let inference_ms = start.elapsed_ms();
 
         Ok(ToxicityScores {
             toxic: sigmoid(logits[[0, 0]] as f64),

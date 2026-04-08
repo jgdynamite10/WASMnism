@@ -646,6 +646,7 @@ name = "clipclap-gateway-core"
 version = "0.2.0"
 dependencies = [
  "aho-corasick",
+ "js-sys",
  "regex",
  "serde",
  "serde_json",
@@ -702,6 +703,8 @@ version = "0.1.0"
 dependencies = [
  "clipclap-gateway-core",
  "getrandom 0.3.4",
+ "include_dir",
+ "js-sys",
  "serde",
  "serde_json",
  "uuid",

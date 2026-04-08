@@ -1,14 +1,16 @@
 name = "wasm-prompt-firewall"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-12-01"
+workers_dev = true
 
 [vars]
 INFERENCE_URL = "https://your-inference-service.example.com"
-GATEWAY_REGION = "us-east-1"
+GATEWAY_REGION = "global"
+GATEWAY_PLATFORM = "Cloudflare Workers"
 
 [[kv_namespaces]]
 binding = "MODERATION_CACHE"
-id = "your-kv-namespace-id"
+id = "de1f12ee8a9849f28ea9acda5aaace3a"
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"

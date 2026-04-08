@@ -1,4 +1,7 @@
 use worker::*;
+use include_dir::{include_dir, Dir};
+
+static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
 use clipclap_gateway_core::{
     cache::CachedVerdict,
@@ -14,7 +17,7 @@ use clipclap_gateway_core::{
 
 fn get_config(env: &Env) -> GatewayConfig {
     GatewayConfig {
-        platform: "workers".into(),
+        platform: env.var("GATEWAY_PLATFORM").map(|v| v.to_string()).unwrap_or_else(|_| "Cloudflare Workers".into()),
         region: env.var("GATEWAY_REGION").map(|v| v.to_string()).unwrap_or_else(|_| "unknown".into()),
     }
 }
@@ -74,8 +77,9 @@ async fn kv_get(env: &Env, hash: &str) -> Option<CachedVerdict> {
 
 async fn kv_put(env: &Env, hash: &str, verdict: &CachedVerdict) {
     if let Ok(kv) = env.kv("MODERATION_CACHE") {
-        let _ = kv.put_bytes(hash, &verdict.to_bytes())
-            .map(|builder| builder.execute());
+        if let Ok(builder) = kv.put_bytes(hash, &verdict.to_bytes()) {
+            let _ = builder.execute().await;
+        }
     }
 }
 
@@ -98,6 +102,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         ("POST", "/api/clip/classify") | ("POST", "/api/clap/classify") => {
             handle_proxy(req, &env).await
         }
+        ("GET", _) => handle_static(&path, &env),
         _ => handle_not_found(&env),
     }
 }
@@ -172,7 +177,7 @@ async fn handle_moderate(mut req: Request, env: &Env) -> Result<Response> {
         Err(err) => return error_json(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, None);
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -193,8 +198,26 @@ async fn handle_moderate_cached(mut req: Request, env: &Env) -> Result<Response>
     let normalized = clipclap_gateway_core::normalize::normalize_labels(&mod_req.labels);
     let hash = clipclap_gateway_core::hash::content_hash(&normalized, None);
     let cached = kv_get(env, &hash).await;
+    let was_miss = cached.is_none();
 
     let resp = pipeline::moderate_cached(&mod_req, cached.as_ref(), &cfg, &rid, None);
+
+    if was_miss {
+        let cv = CachedVerdict::new(
+            hash,
+            clipclap_gateway_core::policy::PolicyResult {
+                verdict: resp.verdict.clone(),
+                flags: vec![],
+                blocked_terms: resp.moderation.blocked_terms.clone(),
+                confidence: resp.moderation.confidence,
+                processing_ms: resp.moderation.processing_ms,
+            },
+            resp.classification.clone(),
+            js_sys::Date::now() as u64,
+        );
+        kv_put(env, &cv.hash, &cv).await;
+    }
+
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -232,6 +255,7 @@ async fn handle_full_moderate(mut req: Request, env: &Env) -> Result<Response> {
         labels,
         nonce: rid.clone(),
         text: None,
+        ml: false,
     };
 
     let pre = pipeline::pre_moderate(&mod_req, None);
@@ -256,7 +280,7 @@ async fn handle_full_moderate(mut req: Request, env: &Env) -> Result<Response> {
 
     let upstream_uri = format!("{}/api/clip/classify", base_url.trim_end_matches('/'));
 
-    let init = RequestInit::new();
+    let mut init = RequestInit::new();
     init.with_method(Method::Post);
 
     let headers = Headers::new();
@@ -324,7 +348,7 @@ async fn handle_proxy(mut req: Request, env: &Env) -> Result<Response> {
 
     let body = req.bytes().await?;
 
-    let init = RequestInit::new();
+    let mut init = RequestInit::new();
     init.with_method(Method::Post);
 
     let headers = Headers::new();
@@ -350,6 +374,49 @@ async fn handle_proxy(mut req: Request, env: &Env) -> Result<Response> {
     h.set("x-gateway-region", &cfg.region)?;
     h.set("x-gateway-request-id", &rid)?;
     Ok(resp.with_status(200))
+}
+
+// ---------------------------------------------------------------------------
+// Static file serving (embedded frontend)
+// ---------------------------------------------------------------------------
+
+fn content_type_for(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "json" => "application/json",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        _ => "application/octet-stream",
+    }
+}
+
+fn handle_static(path: &str, env: &Env) -> Result<Response> {
+    let file_path = match path {
+        "/" | "" => "index.html",
+        p => p.trim_start_matches('/'),
+    };
+
+    if let Some(file) = STATIC_DIR.get_file(file_path) {
+        let ct = content_type_for(file_path);
+        let mut resp = Response::from_bytes(file.contents().to_vec())?;
+        let headers = resp.headers_mut();
+        headers.set("content-type", ct)?;
+        if file_path.starts_with("assets/") {
+            headers.set("cache-control", "public, max-age=31536000, immutable")?;
+        }
+        Ok(resp)
+    } else if let Some(file) = STATIC_DIR.get_file("index.html") {
+        let mut resp = Response::from_bytes(file.contents().to_vec())?;
+        resp.headers_mut().set("content-type", "text/html; charset=utf-8")?;
+        Ok(resp)
+    } else {
+        handle_not_found(env)
+    }
 }
 
 // ---------------------------------------------------------------------------
