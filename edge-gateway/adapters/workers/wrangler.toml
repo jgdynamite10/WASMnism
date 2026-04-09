@@ -5,7 +5,7 @@ workers_dev = true
 
 [vars]
 INFERENCE_URL = "https://your-inference-service.example.com"
-GATEWAY_REGION = "global"
+GATEWAY_REGION = "global (edge)"
 GATEWAY_PLATFORM = "Cloudflare Workers"
 
 [[kv_namespaces]]

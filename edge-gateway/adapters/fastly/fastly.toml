@@ -22,7 +22,7 @@ service_id = "P6OGBpYSN19w9UxuaAfbdi"
 
       [local_server.config_stores.gateway_config.contents]
         gateway_platform = "Fastly Compute"
-        gateway_region = "us-east-1"
+        gateway_region = "global (edge)"
         inference_url = "http://127.0.0.1:8000"
 
   [local_server.kv_stores]

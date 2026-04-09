@@ -8,7 +8,7 @@ description = "AI Prompt Firewall — WASM-Powered Content Moderation at the Edg
 [variables]
 inference_url = { default = "" }
 gateway_platform = { default = "spin" }
-gateway_region = { default = "us-east-1" }
+gateway_region = { default = "local" }
 
 # --- API routes → gateway WASM ---
 

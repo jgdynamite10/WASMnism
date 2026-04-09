@@ -29,20 +29,20 @@ build-spin: build-frontend
 
 run-spin:
 	cd adapters/spin && \
-	SPIN_VARIABLE_GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1} \
+	SPIN_VARIABLE_GATEWAY_REGION=$${GATEWAY_REGION:-local} \
 	spin up
 
 deploy-spin:
 	cd adapters/spin && \
 	spin cloud deploy \
 	  --variable "gateway_platform=Fermyon Cloud" \
-	  --variable gateway_region=$${GATEWAY_REGION:-us-ord}
+	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
 
 deploy-akamai:
 	cd adapters/spin && \
 	spin aka deploy --no-confirm \
 	  --variable "gateway_platform=Akamai Functions" \
-	  --variable gateway_region=$${GATEWAY_REGION:-us-ord}
+	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
 
 # ── Fastly Compute ───────────────────────────────────────────
 build-fastly: build-frontend
