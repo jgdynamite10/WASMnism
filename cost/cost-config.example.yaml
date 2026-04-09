@@ -52,7 +52,9 @@ platforms:
 benchmark:
   avg_response_size_kb: 0.7          # measured from /gateway/moderate
   avg_request_size_kb: 0.2
-  avg_cpu_ms_fastly: 4.0             # from benchmark medians
-  avg_cpu_ms_akamai: 2.3
-  avg_cpu_ms_fermyon: 5.5
+  avg_cpu_ms_fastly: REPLACE_ME      # fill from your benchmark medians
+  avg_cpu_ms_akamai: REPLACE_ME      # fill from your benchmark medians
+  avg_cpu_ms_fermyon: REPLACE_ME     # fill from your benchmark medians
+  avg_cpu_ms_workers: REPLACE_ME     # fill from your benchmark medians
+  avg_cpu_ms_lambda: REPLACE_ME      # fill from your benchmark medians
   cache_hit_rate: 0.0                # basic test, no caching

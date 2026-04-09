@@ -313,7 +313,7 @@ Client --> [Lambda Function URL] --> Lambda ARM64 --> DynamoDB (cache)
 - **Embedded ML**: ToxicityClassifier loaded from `/var/task/models/toxicity/` via `OnceLock` (same lazy-init pattern as Spin)
 - **Frontend dashboard**: Svelte UI embedded via `include_dir` (same approach as Fastly)
 - **ML inference**: runs on native ARM64 (significantly faster than WASM)
-- Remote clients pay full network RTT: ~70ms from EU, ~210ms from AP
+- Remote clients pay full network RTT to us-east-1
 - Deployed via `cargo lambda deploy` with `--include models/toxicity` and `--s3-bucket` for the 53MB+ package
 
 ### Why Architecture Matters for Performance

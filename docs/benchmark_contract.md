@@ -282,7 +282,7 @@ benchmark; they are the reference lines on the scorecard.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| p50 latency | ≤ 1500 ms | Dominated by ML inference (~850ms) |
+| p50 latency | ≤ 1500 ms | Dominated by ML inference |
 | p95 latency | ≤ 3000 ms | Includes model reload or scheduling |
 | Error rate | ≤ 1% | ML inference may occasionally time out |
 | Throughput | ≥ 1 RPS | At 5 concurrent connections |

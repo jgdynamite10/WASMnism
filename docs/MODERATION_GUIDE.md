@@ -12,7 +12,7 @@ model.
 
 A user types a prompt intended for a generative AI model. The WASM gateway at
 the edge evaluates it for prohibited content, PII, injection attacks, and
-evasion attempts — the rule-based pipeline completes in ~3ms (median).
+evasion attempts — the rule-based pipeline completes in single-digit milliseconds.
 
 ```
 User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
@@ -108,8 +108,8 @@ Skipped when `ml: false`, when `text` is absent/empty, or on cached hits.
 
 > **Production recommendation:** Use `ml: false` for latency-sensitive
 > workloads. The rule-based pipeline catches the vast majority of threats
-> at ~3ms. Reserve `ml: true` for asynchronous review or batch processing
-> where ML inference latency (hundreds of milliseconds in WASM) is acceptable.
+> in single-digit milliseconds. Reserve `ml: true` for asynchronous review or batch processing
+> where ML inference latency is acceptable.
 
 **Pipeline:**
 1. WordPiece tokenization (custom Rust tokenizer, 8k vocabulary)

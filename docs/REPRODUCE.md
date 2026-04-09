@@ -220,7 +220,7 @@ compute performance and round-trip metrics to compare end-user experience.
 ### Cold start
 
 Rules-only cold start measures WASM module instantiation overhead.
-ML cold start adds ~1s for deserializing the 53MB NNEF model.
+ML cold start adds model deserialization overhead for the 53MB NNEF model.
 These are separate concerns — most production deployments would use
 `ml: false` and never hit the model loading path.
 

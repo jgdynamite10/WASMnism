@@ -60,4 +60,4 @@ The conversion tool source is at `tools/convert-to-nnef/src/main.rs`.
 ONNX parsing requires protobuf, which adds significant binary size and
 startup latency in WASM. Tract's NNEF format is a simple tar archive of
 tensor files — no protobuf needed. This reduces cold start model
-deserialization from ~3s (ONNX) to ~800ms (NNEF) on Fermyon Cloud.
+deserialization significantly compared to ONNX.
