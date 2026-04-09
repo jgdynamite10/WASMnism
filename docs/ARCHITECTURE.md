@@ -262,6 +262,12 @@ runtime. Full details in `edge-gateway/models/README.md`.
 - The 1ms vs 12ms edge-to-compute hop is intra-city networking, not geographic latency
 - Deployed via `spin aka deploy` (one command, auto-replication is invisible)
 
+### Note on `gateway_region` Variable
+
+The `gateway_region` value shown in API responses (e.g., `"region": "us-ord"`) is a **static configuration variable** set at deploy time via `spin aka deploy --variable gateway_region=us-ord`. It does **not** dynamically reflect which compute region handled a given request. Even though Akamai auto-replicates the WASM binary to Frankfurt and Singapore, the `gateway_region` variable still returns `us-ord` for all requests because it was set once during deployment.
+
+To determine which compute region actually handled a request, use the Akamai response headers described below (specifically `akaalb` and `Akamai-Request-BC`).
+
 ### How We Verified This
 
 Akamai injects headers on every response that reveal the infrastructure path:

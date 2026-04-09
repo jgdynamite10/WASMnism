@@ -178,13 +178,22 @@ No new benchmark scripts, runners, or documentation needed.
 
 ## ML Model
 
-The 53MB ML model (`model.nnef.tar`) is gitignored due to size. It must be
-present at `edge-gateway/models/toxicity/model.nnef.tar` before building.
+The 53MB ML model (`model.nnef.tar`) is gitignored due to size. Download it from the GitHub Release:
+
+```bash
+cd edge-gateway/models/toxicity/
+gh release download v0.2.0-models --repo jgdynamite/WASMnism
+```
+
+Or download manually from: https://github.com/jgdynamite/WASMnism/releases/tag/v0.2.0-models
+
+The model must be at `edge-gateway/models/toxicity/model.nnef.tar` before building with ML support.
 
 See [edge-gateway/models/README.md](../edge-gateway/models/README.md) for:
-- Model provenance and SHA-256 checksums
+- Base model source (HuggingFace) and fine-tuning dataset (Jigsaw/Kaggle)
+- Full conversion pipeline (PyTorch → ONNX → vocabulary trim → Tract NNEF)
 - How to regenerate from scratch
-- Why NNEF format was chosen over ONNX
+- SHA-256 checksums
 
 Verify model integrity:
 
