@@ -200,13 +200,15 @@ CHECKSUMS
 
 ### Key metrics
 
-| Metric | What it means | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda | Cloudflare Workers |
-|--------|--------------|---------------|-----------------|---------------|------------|-------------------|
-| **Server processing p50** | Time the gateway spends on your request (rules only) | 5.4-5.5ms | 2.3-2.4ms | 2.6ms | 0.0ms (native) | <1ms |
-| **Round-trip p50** | Total client-to-server-to-client time | Depends on distance to US-ORD | Depends on nearest compute region | Depends on nearest PoP | Depends on distance to us-east-1 | Depends on nearest PoP |
-| **ML inference p50** | Time for the neural network forward pass | 887ms | 779-789ms | N/A (no FS) | 219ms (native ARM64) | N/A (no WASI) |
-| **Jitter (p95/p50)** | Latency consistency — lower is better | 1.28-1.35x | 1.05-1.11x | 1.39-2.10x | 1.33x | 1.68-1.89x |
-| **Error rate** | Percentage of failed requests | 0% | 0% | 0% | 0% | 0% |
+| Metric | What it means |
+|--------|--------------|
+| **Server processing p50** | Time the gateway spends on your request (rules only). Isolates compute from network. |
+| **Round-trip p50** | Total client-to-server-to-client time. Includes network latency. |
+| **ML inference p50** | Time for the neural network forward pass. Only on platforms with ML support. |
+| **Jitter (p95/p50)** | Latency consistency — lower is better. |
+| **Error rate** | Percentage of failed requests. |
+
+Platform-specific benchmark results are in `results/` (gitignored — not in this repository). Run the benchmark yourself to generate them.
 
 ### Network latency caveat
 

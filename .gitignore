@@ -19,6 +19,9 @@
 # --- Cost config (use cost-config.example.yaml as template) ---
 /cost/cost-config.yaml
 
+# --- Cost model (contains competitive benchmark data) ---
+/cost/cost-model.md
+
 # --- Benchmark scripts with environment-specific URLs/IPs ---
 /bench/run_config.yaml
 

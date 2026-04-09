@@ -68,7 +68,7 @@ Default is `true` for backward compatibility.
 
 All computation runs inside the WASM sandbox. The stretch suite demonstrates
 that in-WASM neural network inference is feasible but has significant latency
-implications (~890ms per request vs ~3ms for rules-only).
+implications (significantly higher latency than the rules-only pipeline).
 
 ---
 
@@ -197,10 +197,10 @@ loads the model from bundled files at startup.
 
 | Phase | Typical | Notes |
 |-------|---------|-------|
-| Model deserialization | ~800ms | Cold start only |
+| Model deserialization | Varies | Cold start only; depends on platform I/O speed |
 | WordPiece tokenization | <1ms | Custom Rust tokenizer |
-| Forward pass | ~850ms | Warm, on Fermyon Cloud |
-| Total gateway processing | ~860ms | Including all 8 pipeline steps |
+| Forward pass | Varies by platform | Dominant cost of ML inference |
+| Total gateway processing | Varies | Including all 8 pipeline steps |
 
 ### 4.3 Headers
 

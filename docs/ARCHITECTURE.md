@@ -131,8 +131,8 @@ Request JSON
 │  • Forward pass through MiniLMv2 (22.7M params, Tract NNEF)            │
 │  • Sigmoid → per-category probabilities (toxic, severe_toxic)           │
 │                                                                         │
-│  Performance: ~779ms (Akamai Functions) / ~1,760ms (Fermyon Cloud)     │
-│  When ml:false → this entire step is skipped (saves ~779ms+)            │
+│  Performance: varies significantly by platform (see private results)   │
+│  When ml:false → this entire step is skipped                            │
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -201,10 +201,10 @@ runtime. Full details in `edge-gateway/models/README.md`.
 │                    │  us-ord (Chicago) │                               │
 │                    │                  │                               │
 │  User (Chicago) ──▶│  WASM Gateway    │  ◀── User (Frankfurt)         │
-│        ~28ms       │  + KV Store      │          ~103ms               │
+│                    │  + KV Store      │                               │
 │                    │  + Frontend      │                               │
 │                    └──────────────────┘  ◀── User (Singapore)         │
-│                                                  ~244ms               │
+│                                                                       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -225,8 +225,8 @@ runtime. Full details in `edge-gateway/models/README.md`.
 │  │                  4,200+ PoPs globally                         │    │
 │  │                                                              │    │
 │  │  User (Chicago) ──▶ [Chicago PoP] ──┐                        │    │
-│  │       ~9ms            TLS + route    │                        │    │
-│  │                                      ▼  1ms                   │    │
+│  │                       TLS + route    │                        │    │
+│  │                                      ▼                        │    │
 │  │                              ┌──────────────┐                 │    │
 │  │                              │ fwf-dev-     │                 │    │
 │  │                              │  us-ord      │                 │    │
@@ -234,8 +234,8 @@ runtime. Full details in `edge-gateway/models/README.md`.
 │  │                              └──────────────┘                 │    │
 │  │                                                              │    │
 │  │  User (Frankfurt) ▶ [Frankfurt PoP] ┐                        │    │
-│  │       ~6ms             TLS + route   │                        │    │
-│  │                                      ▼  12ms                  │    │
+│  │                        TLS + route   │                        │    │
+│  │                                      ▼                        │    │
 │  │                              ┌──────────────┐                 │    │
 │  │                              │ fwf-dev-     │                 │    │
 │  │                              │  de-fra-2    │                 │    │
@@ -243,8 +243,8 @@ runtime. Full details in `edge-gateway/models/README.md`.
 │  │                              └──────────────┘                 │    │
 │  │                                                              │    │
 │  │  User (Singapore) ▶ [Singapore PoP] ┐                        │    │
-│  │       ~9ms             TLS + route   │                        │    │
-│  │                                      ▼  12ms                  │    │
+│  │                        TLS + route   │                        │    │
+│  │                                      ▼                        │    │
 │  │                              ┌──────────────┐                 │    │
 │  │                              │ fwf-dev-     │                 │    │
 │  │                              │  sg-sin-2    │                 │    │
@@ -307,28 +307,25 @@ Client --> [Lambda Function URL] --> Lambda ARM64 --> DynamoDB (cache)
 - **Not WASM**: Lambda runs a native ARM64 binary compiled from the same Rust codebase
 - **Single region**: Deployed to us-east-1 (N. Virginia)
 - **Zero scheduling overhead**: Lambda environments stay warm for ~15 minutes
-- **Sub-millisecond processing**: Native ARM64 is so fast the processing time reports as 0.0ms
+- **Sub-millisecond processing**: Native ARM64 processes faster than WASM platforms
 - **DynamoDB caching**: Uses DynamoDB on-demand for verdict caching (instead of KV stores)
 - **Function URL**: Direct HTTPS endpoint, no API Gateway (for fair benchmarking)
 - **Embedded ML**: ToxicityClassifier loaded from `/var/task/models/toxicity/` via `OnceLock` (same lazy-init pattern as Spin)
 - **Frontend dashboard**: Svelte UI embedded via `include_dir` (same approach as Fastly)
-- **ML inference**: 219ms on native ARM64 (3.6x faster than WASM)
+- **ML inference**: runs on native ARM64 (significantly faster than WASM)
 - Remote clients pay full network RTT: ~70ms from EU, ~210ms from AP
 - Deployed via `cargo lambda deploy` with `--include models/toxicity` and `--s3-bucket` for the 53MB+ package
 
-### Why This Architecture Difference Explains the Performance Gap
+### Why Architecture Matters for Performance
 
 | Step | Fastly (single-tier) | Akamai (two-tier) | Fermyon (single-region) | AWS Lambda (regional) |
 |------|---------------------|-------------------|------------------------|----------------------|
-| TLS termination | At PoP (~1-3ms) | At edge PoP (~1-3ms) | At compute (~1-3ms) | At Lambda URL (~1ms) |
-| Route to compute | **N/A (same node)** | 1-18ms internal hop | N/A (single region) | N/A (single region) |
-| Schedule WASM/runtime | **~0ms (pre-warmed)** | ~300-380ms (on-demand) | ~1,000-1,100ms (on-demand) | **~0ms (warm Lambda)** |
-| Execute logic | ~2-5ms | ~2-3ms | ~5ms | **<0.1ms (native)** |
-| **Total round-trip** | **~5-15ms** | **~320-400ms** | **~1,000-1,350ms** | **~31ms** (us-ord)† |
+| TLS termination | At PoP | At edge PoP | At compute | At Lambda URL |
+| Route to compute | **N/A (same node)** | Internal hop | N/A (single region) | N/A (single region) |
+| Schedule WASM/runtime | **Pre-warmed** | On-demand | On-demand | **Warm Lambda** |
+| Execute logic | WASM | WASM | WASM | **Native ARM64** |
 
-†Lambda round-trip from remote regions: ~104ms (EU), ~246ms (AP) — dominated by network RTT.
-
-Server processing is similar (2-5ms) on all platforms. The 45-128x performance gap comes entirely from **platform scheduling overhead** — the invisible tax of Akamai/Fermyon's on-demand dispatch vs Fastly's pre-warmed isolates.
+Server processing time is similar across WASM platforms. The dominant performance differentiator is **platform scheduling overhead** — the cost of on-demand dispatch vs pre-warmed isolates. Benchmark results (private) quantify this gap. See `results/` (gitignored).
 
 ### Platform Comparison
 
@@ -337,7 +334,7 @@ Server processing is similar (2-5ms) on all platforms. The 45-128x performance g
 | Architecture | Single-region | Two-tier (edge + compute) | **Single-tier (PoP = compute)** | Single-region |
 | Runtime | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | **Native ARM64** |
 | Execution location | US-ORD only | Compute regions (3+) | **Directly at PoP** | us-east-1 only |
-| Scheduling model | On-demand (~1,100ms) | On-demand (~385ms) | **Pre-warmed (~0ms)** | **Warm (~0ms)** |
+| Scheduling model | On-demand | On-demand | **Pre-warmed** | **Warm** |
 | Compute regions | 1 (us-ord) | 3+ (us-ord, de-fra-2, sg-sin-2) | 4+ PoPs (DFW, CHI, FRA, SIN) | 1 (us-east-1) |
 | Edge layer | None | 4,200+ Akamai CDN PoPs | Fastly PoP network | None |
 | Auto-replication | No | Yes | Yes | No |
@@ -352,7 +349,7 @@ Server processing is similar (2-5ms) on all platforms. The 45-128x performance g
 
 ## 4. Request Lifecycle
 
-### Rules-Only Request (`ml: false`) — ~2.3ms server processing
+### Rules-Only Request (`ml: false`)
 
 ```
 Client                    Edge PoP (Akamai only)        Compute Region
@@ -368,11 +365,11 @@ Client                    Edge PoP (Akamai only)        Compute Region
   │                              │                           │── merge verdict
   │                              │                           │── cache write
   │                              │◀── response ──────────────│
-  │◀── JSON response ───────────│      ~2.3ms processing    │
+  │◀── JSON response ───────────│                           │
   │                              │                           │
 ```
 
-### ML Request (`ml: true`) — ~779ms server processing (Akamai)
+### ML Request (`ml: true`)
 
 ```
 Client                    Edge PoP (Akamai only)        Compute Region
@@ -387,12 +384,11 @@ Client                    Edge PoP (Akamai only)        Compute Region
   │                              │                           │── ML: tokenize text
   │                              │                           │── ML: build tensors
   │                              │                           │── ML: Tract forward pass
-  │                              │                           │      (~779ms)
   │                              │                           │── ML: sigmoid scores
   │                              │                           │── merge verdict
   │                              │                           │── cache write
   │                              │◀── response ──────────────│
-  │◀── JSON response ───────────│      ~781ms processing    │
+  │◀── JSON response ───────────│                           │
   │                              │                           │
 ```
 
@@ -482,38 +478,14 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
 
 ---
 
-## 6. Performance Results Summary
+## 6. Performance Results
 
-Measured April 2-5, 2026. Same core library across all platforms.
+Benchmark results are stored in `results/` (gitignored — not in this repository).
+The benchmark compares all five platforms across three geographic regions using
+the primary suite (rules-only) and stretch suite (embedded ML). Results include
+per-region p50/p95 latencies, throughput, cold start times, and ML inference.
 
-### Rules-Only Pipeline — Policy Endpoint p50 (median of 7 runs)
-
-| Region | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
-|--------|--------------|-----------------|---------------|------------|
-| us-ord (Chicago) | 1,100ms | 388ms | **8.6ms** | 30.9ms |
-| eu-central (Frankfurt) | 1,060ms | 401ms | **5.7ms** | 103.3ms |
-| ap-south (Singapore) | 1,350ms | 388ms | **6.1ms** | 246.2ms |
-
-### Throughput (requests/sec, policy endpoint)
-
-| Region | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
-|--------|--------------|-----------------|---------------|------------|
-| us-ord | 9/s | 25/s | **1,026/s** | 310/s |
-| eu-central | 9/s | 25/s | **1,581/s** | 95/s |
-| ap-south | 7/s | 25/s | **1,369/s** | 40/s |
-
-### Embedded ML (stretch tests, Fermyon + Akamai + Lambda)
-
-| Metric | Fermyon Cloud | Akamai Functions | AWS Lambda (ARM64) |
-|--------|--------------|-----------------|-------------------|
-| ML inference p50 | 887ms | 779ms | **219ms** |
-| ML throughput | 3.6/s | 4.3/s | **17.2/s** |
-| ML cold start p50 | 1,455ms | 1,187ms | **261ms** |
-| Jitter (p95/p50) | **1.06x** | **1.05x** | 1.51x |
-
-Native ARM64 runs ML inference 3.6x faster than the best WASM platform (Akamai). Fastly cannot run ML (no filesystem access).
-
-Full results: `results/four_platform_scorecard.md` (local, gitignored).
+To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 
 ---
 

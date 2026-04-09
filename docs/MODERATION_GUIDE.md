@@ -51,7 +51,7 @@ Lambda — the scorecard compares overhead across all four.
 | `text` | null | Full prompt for PII, injection, and ML analysis |
 | `ml` | `true` | Set `false` to skip ML inference (recommended for production) |
 
-When `ml` is `false`, the gateway runs only the rule-based pipeline (layers 1–2 below), delivering sub-5ms processing. When `ml` is `true` and `text` is present, the ML toxicity classifier (layer 3) also runs (~779ms on Akamai Functions, ~1,760ms on Fermyon Cloud).
+When `ml` is `false`, the gateway runs only the rule-based pipeline (layers 1–2 below), delivering sub-5ms processing. When `ml` is `true` and `text` is present, the ML toxicity classifier (layer 3) also runs. ML inference latency varies significantly by platform — see benchmark results for specifics.
 
 ## Defense Layers
 
@@ -109,7 +109,7 @@ Skipped when `ml: false`, when `text` is absent/empty, or on cached hits.
 > **Production recommendation:** Use `ml: false` for latency-sensitive
 > workloads. The rule-based pipeline catches the vast majority of threats
 > at ~3ms. Reserve `ml: true` for asynchronous review or batch processing
-> where ~779ms (Akamai) / ~1,760ms (Fermyon) latency is acceptable.
+> where ML inference latency (hundreds of milliseconds in WASM) is acceptable.
 
 **Pipeline:**
 1. WordPiece tokenization (custom Rust tokenizer, 8k vocabulary)
@@ -130,10 +130,10 @@ Skipped when `ml: false`, when `text` is absent/empty, or on cached hits.
 keyword rules miss. "You are pathetic and disgusting" contains no
 prohibited terms, but the model scores it at ~0.86 toxicity and blocks it.
 
-**Performance:** ML inference p50 is ~779ms on Akamai Functions and ~1,760ms on Fermyon Cloud
-(same WASM binary — the difference is platform runtime performance). Cold start adds model
-deserialization overhead. Warm inference is dominated by the forward pass since the model
-is already loaded.
+**Performance:** ML inference latency varies by platform (same WASM binary — the difference
+is platform runtime performance). Cold start adds model deserialization overhead. Warm
+inference is dominated by the forward pass since the model is already loaded. See benchmark
+results for platform-specific numbers.
 
 **Core function:** `clipclap_gateway_core::toxicity::ToxicityClassifier`
 
