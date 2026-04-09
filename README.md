@@ -57,6 +57,9 @@ A Svelte SaaS-style dashboard with:
 - **Export**: PyTorch → ONNX (opset 14, fixed shapes) → vocabulary-trimmed (30k → 8k tokens) → Tract NNEF
 - **Runtime**: Pure-Rust inference via Tract, with a custom WordPiece tokenizer — no Python, no external service calls
 - **Size**: ~53 MB model + 56 KB vocabulary
+- **Download**: `cd edge-gateway/models/toxicity/ && gh release download v0.2.0-models` ([release page](https://github.com/jgdynamite/WASMnism/releases/tag/v0.2.0-models))
+- **Base model**: [nreimers/MiniLMv2-L6-H384-distilled-from-RoBERTa-Large](https://huggingface.co/nreimers/MiniLMv2-L6-H384-distilled-from-RoBERTa-Large) (HuggingFace)
+- **Dataset**: [Jigsaw Toxic Comment Classification](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge) (Kaggle)
 - **ML availability**: Fermyon Cloud, Akamai Functions, AWS Lambda (native). Not available on Fastly (no filesystem) or Cloudflare Workers (no WASI).
 
 ### Benchmark Infrastructure

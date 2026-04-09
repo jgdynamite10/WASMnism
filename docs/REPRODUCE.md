@@ -71,7 +71,23 @@ make prereqs
 
 ## Quick Reproduce (single region, from your machine)
 
-### 1. Build and deploy
+### 1. Download ML model files (optional — needed only for `ml: true` tests)
+
+```bash
+cd edge-gateway/models/toxicity/
+gh release download v0.2.0-models --repo jgdynamite/WASMnism
+
+# Verify checksums
+shasum -a 256 -c << 'CHECKSUMS'
+aaf95fcf4aef8e7636a7bf40e2cb3f4ed03eb039b8bd32e96c348224bca99377  model.nnef.tar
+04332de50cb467423bfd623703c8c05e830a57a2f325cda835a29bef7626655f  vocab.txt
+CHECKSUMS
+cd ../../..
+```
+
+The rules-only pipeline (`ml: false`) — which is the primary benchmark suite — builds and runs without the model files.
+
+### 2. Build and deploy
 
 ```bash
 # Build WASM gateway + frontend
@@ -93,7 +109,7 @@ make deploy-lambda
 make deploy-workers
 ```
 
-### 2. Run the full pipeline
+### 3. Run the full pipeline
 
 ```bash
 # Primary suite only (~40 min: validate + 7 runs)
