@@ -8,7 +8,6 @@ use clipclap_gateway_core::{
     error::{map_upstream_status, GatewayError},
     handlers,
     pipeline::{self, ModerationRequest},
-    policy,
     types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
 

@@ -71,7 +71,7 @@
       <aside class="side-col">
         <div class="card info-card">
           <h3>How It Works</h3>
-          <p class="info-desc">Every prompt passes through a moderation pipeline running as WebAssembly at the edge — before reaching any AI model.</p>
+          <p class="info-desc">Every prompt passes through a rule-based moderation pipeline running as WebAssembly at the edge.</p>
           <ol class="pipeline-list">
             <li><span class="step-badge">1</span>Unicode NFC normalization</li>
             <li><span class="step-badge">2</span>SHA-256 content hashing</li>
@@ -79,8 +79,7 @@
             <li><span class="step-badge">4</span>Prohibited content scan</li>
             <li><span class="step-badge">5</span>PII detection (email, phone, SSN)</li>
             <li><span class="step-badge">6</span>Injection detection (XSS, SQL)</li>
-            <li><span class="step-badge">7</span>ML toxicity classifier</li>
-            <li><span class="step-badge">8</span>Policy verdict</li>
+            <li><span class="step-badge">7</span>Policy verdict</li>
           </ol>
         </div>
 
@@ -90,36 +89,10 @@
           <div class="tech-pills">
             <span class="pill">Rust</span>
             <span class="pill">WASM</span>
-            <span class="pill">Tract NNEF</span>
-            <span class="pill">MiniLMv2</span>
+            <span class="pill">WASI</span>
           </div>
         </div>
 
-        {#if health?.ml_classifier_ready !== undefined}
-          <div class="card info-card">
-            <h3>ML Model Status</h3>
-            <div class="model-status-grid">
-              <div class="model-row">
-                <span class="model-label">Model file</span>
-                <span class="model-val" class:ok={health.ml_model_file} class:err={!health.ml_model_file}>
-                  {health.ml_model_file ? 'Loaded' : 'Missing'}
-                </span>
-              </div>
-              <div class="model-row">
-                <span class="model-label">Vocabulary</span>
-                <span class="model-val" class:ok={health.ml_vocab_file} class:err={!health.ml_vocab_file}>
-                  {health.ml_vocab_file ? 'Loaded' : 'Missing'}
-                </span>
-              </div>
-              <div class="model-row">
-                <span class="model-label">Classifier</span>
-                <span class="model-val" class:ok={health.ml_classifier_ready} class:err={!health.ml_classifier_ready}>
-                  {health.ml_classifier_ready ? 'Ready' : 'Standby'}
-                </span>
-              </div>
-            </div>
-          </div>
-        {/if}
       </aside>
     </div>
   </main>
@@ -365,32 +338,6 @@
     font-size: 11px;
     font-weight: 500;
   }
-
-  .model-status-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .model-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .model-label {
-    font-size: 13px;
-    color: #71717a;
-  }
-
-  .model-val {
-    font-size: 12px;
-    font-weight: 500;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .model-val.ok { color: #4ade80; }
-  .model-val.err { color: #71717a; }
 
   /* ---- Footer ---- */
 

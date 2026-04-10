@@ -9,7 +9,7 @@ test:
 
 clean:
 	cargo clean
-	rm -rf adapters/spin/static adapters/fastly/static adapters/lambda/static adapters/lambda/models adapters/workers/static
+	rm -rf adapters/spin/static adapters/fastly/static adapters/lambda/static adapters/workers/static
 
 # ── Frontend (build + copy to adapter static dirs) ───────────
 build-frontend:
@@ -62,19 +62,12 @@ deploy-workers: build-frontend
 build-lambda: build-frontend
 	cd adapters/lambda && cargo lambda build --release --arm64
 
-stage-lambda-models:
-	mkdir -p adapters/lambda/models/toxicity
-	cp models/toxicity/model.nnef.tar adapters/lambda/models/toxicity/
-	cp models/toxicity/vocab.txt adapters/lambda/models/toxicity/
-
-deploy-lambda: build-frontend stage-lambda-models
+deploy-lambda: build-frontend
 	cd adapters/lambda && cargo lambda deploy bootstrap \
 	  --region $${AWS_REGION:-us-east-1} \
 	  --iam-role $${LAMBDA_ROLE:?Set LAMBDA_ROLE} \
 	  --timeout 30 \
 	  --memory-size 512 \
 	  --s3-bucket $${LAMBDA_S3_BUCKET:?Set LAMBDA_S3_BUCKET} \
-	  --include models/toxicity \
 	  --env-var GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1} \
-	  --env-var GATEWAY_PLATFORM="AWS Lambda" \
-	  --env-var ML_MODEL_PATH=/var/task/models/toxicity
+	  --env-var GATEWAY_PLATFORM="AWS Lambda"

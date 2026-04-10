@@ -5,7 +5,6 @@ use lambda_http::{
     http::StatusCode, run, service_fn, Body, Error, Request, Response,
 };
 use std::env;
-use std::sync::OnceLock;
 use uuid::Uuid;
 
 use clipclap_gateway_core::{
@@ -13,72 +12,12 @@ use clipclap_gateway_core::{
     error::{map_upstream_status, GatewayError},
     handlers,
     pipeline::{self, ModerationRequest},
-    toxicity::ToxicityClassifier,
     types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
 
 static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
 const DYNAMO_TABLE: &str = "moderation-cache";
-
-// ---------------------------------------------------------------------------
-// ML model loading (lazy, survives across warm-start invocations)
-// ---------------------------------------------------------------------------
-
-static CLASSIFIER: OnceLock<Option<ToxicityClassifier>> = OnceLock::new();
-static CLASSIFIER_ERROR: OnceLock<Option<String>> = OnceLock::new();
-
-fn get_classifier() -> Option<&'static ToxicityClassifier> {
-    CLASSIFIER
-        .get_or_init(|| {
-            let model_dir = env::var("ML_MODEL_PATH")
-                .unwrap_or_else(|_| "/var/task/models/toxicity".into());
-
-            let model_path = format!("{}/model.nnef.tar", model_dir);
-            let vocab_path = format!("{}/vocab.txt", model_dir);
-
-            let model_bytes = match std::fs::read(&model_path) {
-                Ok(b) => b,
-                Err(e) => {
-                    let msg = format!("model read {model_path}: {e}");
-                    let _ = CLASSIFIER_ERROR.set(Some(msg));
-                    return None;
-                }
-            };
-            let vocab = match std::fs::read_to_string(&vocab_path) {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("vocab read {vocab_path}: {e}");
-                    let _ = CLASSIFIER_ERROR.set(Some(msg));
-                    return None;
-                }
-            };
-            let info = format!(
-                "model={} bytes, vocab={} lines",
-                model_bytes.len(),
-                vocab.lines().count()
-            );
-            match ToxicityClassifier::from_nnef_tar(&model_bytes, &vocab) {
-                Ok(c) => {
-                    let _ = CLASSIFIER_ERROR.set(Some(format!("ok: {info}")));
-                    Some(c)
-                }
-                Err(e) => {
-                    let _ = CLASSIFIER_ERROR.set(Some(format!("init failed ({info}): {e}")));
-                    None
-                }
-            }
-        })
-        .as_ref()
-}
-
-fn classifier_status() -> String {
-    match CLASSIFIER_ERROR.get() {
-        Some(Some(msg)) => msg.clone(),
-        Some(None) => "not attempted".into(),
-        None => "not loaded yet".into(),
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -201,24 +140,7 @@ async fn handler(req: Request, dynamo: &DynamoClient) -> Result<Response<Body>, 
 fn handle_health() -> Response<Body> {
     let cfg = config();
     let rid = request_id();
-
-    let model_dir = env::var("ML_MODEL_PATH")
-        .unwrap_or_else(|_| "/var/task/models/toxicity".into());
-    let model_exists =
-        std::fs::metadata(format!("{}/model.nnef.tar", model_dir)).is_ok();
-    let vocab_exists =
-        std::fs::metadata(format!("{}/vocab.txt", model_dir)).is_ok();
-    let already_loaded = CLASSIFIER.get().map(|o| o.is_some()).unwrap_or(false);
-
-    let mut health = serde_json::to_value(&handlers::health(&cfg)).unwrap_or_default();
-    if let Some(obj) = health.as_object_mut() {
-        obj.insert("ml_model_file".into(), model_exists.into());
-        obj.insert("ml_vocab_file".into(), vocab_exists.into());
-        obj.insert("ml_classifier_ready".into(), already_loaded.into());
-        obj.insert("ml_status".into(), classifier_status().into());
-    }
-
-    json_ok(&health, &rid, &cfg)
+    json_ok(&handlers::health(&cfg), &rid, &cfg)
 }
 
 fn handle_echo(req: &Request) -> Response<Body> {
@@ -281,7 +203,7 @@ fn handle_moderate(req: &Request) -> Response<Body> {
         Err(err) => return error_resp(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, None);
     json_ok(&resp, &rid, &cfg)
 }
 

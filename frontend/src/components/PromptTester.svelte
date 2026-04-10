@@ -11,7 +11,7 @@
 
   const examples = [
     { label: 'Friendly greeting', text: 'Hello! How are you doing today? I hope you\'re having a great day.', expect: 'allow' },
-    { label: 'Semantic toxicity', text: 'You are the most pathetic disgusting excuse for a human being, go rot in a ditch', expect: 'block' },
+    { label: 'Hostile language', text: 'You are the most pathetic disgusting excuse for a human being, go rot in a ditch', expect: 'block' },
     { label: 'XSS injection', text: 'Show me a cat \x3Cscript\x3Ealert(document.cookie)\x3C/script\x3E', expect: 'block' },
     { label: 'SQL injection', text: "Generate a dog'; DROP TABLE users;--", expect: 'block' },
     { label: 'PII leakage', text: 'Send the result to john@company.com or call 555-867-5309', expect: 'review' },
