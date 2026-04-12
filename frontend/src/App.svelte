@@ -85,7 +85,7 @@
 
         <div class="card info-card">
           <h3>About This Benchmark</h3>
-          <p class="info-desc">This gateway runs identically on Akamai Functions, Fastly Compute, and Cloudflare Workers. The scorecard measures WASM-first edge performance per price across all three platforms.</p>
+          <p class="info-desc">This gateway runs identically on Akamai Functions, Fastly Compute, and Cloudflare Workers. The scorecard measures overhead across all three platforms. To access the testing methodology and latest scorecard, <a href="https://github.com/jgdynamite/WASMnism/blob/rules-only/docs/benchmark_contract.md" target="_blank" rel="noopener">click here</a>.</p>
           <div class="tech-pills">
             <span class="pill">Rust</span>
             <span class="pill">WASM</span>
