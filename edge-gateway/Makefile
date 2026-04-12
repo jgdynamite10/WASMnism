@@ -18,8 +18,6 @@ build-frontend:
 	cp -r ../frontend/dist/* adapters/spin/static/
 	mkdir -p adapters/fastly/static
 	cp -r ../frontend/dist/* adapters/fastly/static/
-	mkdir -p adapters/lambda/static
-	cp -r ../frontend/dist/* adapters/lambda/static/
 	mkdir -p adapters/workers/static
 	cp -r ../frontend/dist/* adapters/workers/static/
 
