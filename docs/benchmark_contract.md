@@ -124,7 +124,7 @@ field names, types, and nesting MUST NOT.
     "hash": "sha256:<64 hex chars>"
   },
   "gateway": {
-    "platform": "<Fermyon Cloud | Akamai Functions | fastly | workers | lambda>",
+    "platform": "<Akamai Functions | Fastly Compute | workers>",
     "region": "<string>",
     "request_id": "<uuid>"
   }
@@ -141,7 +141,7 @@ field names, types, and nesting MUST NOT.
 - `moderation.ml_toxicity.inference_ms` MUST reflect actual ML forward pass time.
 - `cache.hit` MUST be a boolean.
 - `cache.hash` MUST start with `sha256:` followed by 64 hex characters.
-- `gateway.platform` MUST be one of the target platforms (`Fermyon Cloud`, `Akamai Functions`, `Fastly Compute`, `AWS Lambda`, `workers`).
+- `gateway.platform` MUST be one of the target platforms (`Akamai Functions`, `Fastly Compute`, `workers`).
 - `gateway.request_id` MUST be a UUID v4.
 - HTTP status MUST be `200` on success.
 
@@ -209,7 +209,7 @@ The gateway MUST set the following response headers:
 | Header | Value |
 |--------|-------|
 | `Content-Type` | `application/json` |
-| `X-Gateway-Platform` | `Fermyon Cloud`, `Akamai Functions`, `fastly`, `workers`, or `lambda` |
+| `X-Gateway-Platform` | `Akamai Functions`, `Fastly Compute`, or `workers` |
 | `X-Gateway-Region` | Deployment region (e.g., `us-ord`) |
 | `X-Gateway-Request-Id` | UUID v4, generated per request |
 
@@ -224,7 +224,6 @@ Each platform uses its native KV store:
 | Akamai Functions (Spin) | `spin_sdk::key_value::Store` | `default` |
 | Fastly Compute | `fastly::KVStore` | `moderation_cache` |
 | Cloudflare Workers | `worker::kv` | `MODERATION_CACHE` |
-| AWS Lambda | DynamoDB | `moderation-cache` |
 
 ---
 
@@ -442,10 +441,9 @@ platform and compare any two results directories.
 ```
 | Platform | $/1M (rules) | $/1M (ML) |
 |----------|-------------|-----------|
-| Spin     |             |           |
+| Akamai   |             |           |
 | Fastly   |             |           |
 | Workers  |             |           |
-| Lambda   |             |           |
 ```
 
 ---
@@ -488,7 +486,7 @@ S1 uses a timestamped label to guarantee a cache miss.
 
 Exit code 0 = all 9 scenarios passed. Any non-zero exit = at least one check failed.
 
-All four platforms must produce 9/9 pass before performance benchmarks are run.
+All three platforms must produce 9/9 pass before performance benchmarks are run.
 
 ---
 

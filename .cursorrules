@@ -1,14 +1,18 @@
 # WASMnism: AI Prompt Firewall — Edge Moderation Benchmark
 
-You are building a portable AI Prompt Firewall deployed as WebAssembly across multiple edge platforms (Fermyon Cloud/Spin, Fastly Compute, Cloudflare Workers) and AWS Lambda, with an embedded ML toxicity classifier, producing a decision-grade price-per-performance scorecard for a blog post.
+You are building a portable AI Prompt Firewall deployed as WebAssembly across WASM-first edge platforms, producing a decision-grade price-per-performance scorecard for a blog post.
+
+## Two-Branch Strategy
+
+- **`rules-only` branch (Tier 1)**: WASM-first performance/price comparison — Akamai Functions vs Fastly Compute vs Cloudflare Workers. Rules-only pipeline, no ML.
+- **`ml-inference` branch (Tier 2)**: ML inference at the edge — Akamai Functions vs AWS Lambda. Embedded MiniLMv2 toxicity classifier.
 
 ## Architecture
 
 - Rust workspace at `edge-gateway/` with shared `core/` logic and per-platform adapters.
-- Core pipeline: normalize → hash → leetspeak expand → prohibited scan → PII → injection → ML toxicity (MiniLMv2 via Tract NNEF) → verdict.
+- Core pipeline (rules-only): normalize → hash → leetspeak expand → prohibited scan → PII → injection → verdict.
 - Svelte dashboard at `frontend/` — built to static files, served by Spin's fileserver component.
-- ML model (MiniLMv2, 22.7M params, NNEF format) runs inside the WASM sandbox. No external ML calls.
-- Fermyon Cloud is the primary deployment. Live at: https://wasm-prompt-firewall-imjy4pe0.fermyon.app/
+- Akamai Functions is the primary deployment. Live at: https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app/
 
 ## Hard Requirements
 
@@ -22,6 +26,18 @@ You are building a portable AI Prompt Firewall deployed as WebAssembly across mu
 - Never ask the user to paste tokens, kubeconfigs, API keys, or credentials into chat.
 - PROJECT_STATE and OPERATIONS files are private — never commit them.
 
+## Agent Procedures
+
+- Read `AGENT_HANDOVER.md` first. It provides narrative context, timeline, lessons learned, and reading order for all other docs.
+- Read `PROJECT_STATE.md` for current deploy/benchmark status, known issues, and pending tasks.
+- Read `docs/AGENT_PLAYBOOK.md` for operational procedures, naming conventions, and checklists.
+- Update `PROJECT_STATE.md` at the end of every session with what changed.
+- Update `AGENT_HANDOVER.md` if you make significant decisions, discover bugs, or change strategic direction.
+- Use `make report` for all scorecard generation — never run pandoc/weasyprint directly.
+- Use `make security-check` before staging commits.
+- Run `bench/validate-results.py` before building any scorecard to catch stale data.
+- Never re-run benchmarks without first checking if fresh data already exists in `results/`.
+
 ## Security Rules
 
 - Never hardcode: API keys, secret keys, passwords, IP addresses, account IDs, or inference service URLs.
@@ -29,11 +45,21 @@ You are building a portable AI Prompt Firewall deployed as WebAssembly across mu
 - Provide .env.example and cost-config.example.yaml with placeholders only.
 - Do not log secrets, credentials, or PII.
 - Benchmark result JSON may contain IPs — keep raw results out of git (use .gitignore).
+- Run `make security-check` before any commit to scan for secrets, IPs, PII, and API tokens.
+- The pre-push hook (`scripts/pre-push-check.sh`) blocks pushes containing sensitive data. Never bypass it with `--no-verify`.
 
 ## Target Platforms
 
-- Tier 1 (edge): Fermyon Cloud (Spin), Fastly Compute, Cloudflare Workers
-- Tier 2 (baseline): AWS Lambda (regional), Native (Linode)
+- Tier 1 — WASM-first (rules-only branch): Akamai Functions (Spin), Fastly Compute, Cloudflare Workers
+- Tier 2 — ML inference (ml-inference branch): Akamai Functions (Spin) vs AWS Lambda
+
+## Platform Tiers (Pricing)
+
+- All platforms must use paid tiers (or best-effort equivalent) for fair benchmarking.
+- Cloudflare Workers: Workers Paid plan ($5/mo)
+- Fastly Compute: Usage-based (no free/paid distinction)
+- Akamai Functions: Preview/beta (document current status)
+- AWS Lambda: Standard pricing (Tier 2 / ml-inference branch only)
 
 ## Project Structure
 

@@ -44,20 +44,6 @@ These are on the *response* side. On the *request* side inside the WASM handler,
 2. Request a Spin SDK feature to expose the compute region as a variable
 3. Use the `x-envoy-upstream-service-time` header if available on inbound
 
-### AWS Lambda
-
-Lambda provides the `AWS_REGION` environment variable, which is already used:
-
-```rust
-let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "unknown".into());
-```
-
-This is already dynamic (set by Lambda runtime), but Lambda is single-region so it always returns the deploy region (e.g., `us-east-1`).
-
-### Fermyon Cloud
-
-Fermyon Cloud is single-region (us-ord). No dynamic detection needed — the static label is accurate.
-
 ## Output Format
 
 Return a consistent, non-sensitive region identifier:
@@ -65,11 +51,12 @@ Return a consistent, non-sensitive region identifier:
 ```json
 {
   "gateway": {
-    "region": "ORD"       // IATA code for edge platforms
-    "region": "us-east-1" // AWS region for Lambda
+    "region": "ORD"  // IATA airport code for edge platforms
   }
 }
 ```
+
+> **Note:** AWS Lambda region detection is handled on the `ml-inference` branch (Tier 2).
 
 ## Security Considerations
 

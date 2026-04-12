@@ -19,8 +19,8 @@ covering system design, deployment topology, and benchmark infrastructure.
   ┌──────────┐                 │  │  │ Adapter      │──▶│  (shared Rust)     │    │    │
   │  k6 Load │─── HTTPS ─────▶│  │  │ (spin/       │   │                   │    │    │
   │  Runner  │◀───────────────│  │  │  fastly/     │   │  pipeline.rs      │    │    │
-  └──────────┘                 │  │  │  workers/    │   │  policy.rs        │    │    │
-                               │  │  │  lambda)     │   │  toxicity.rs      │    │    │
+  └──────────┘                 │  │  │  workers)    │   │  policy.rs        │    │    │
+                               │  │  │              │   │  toxicity.rs      │    │    │
                                │  │  └─────────────┘   │  tokenizer        │    │    │
                                │  │                     │  normalize.rs     │    │    │
                                │  │                     │  hash.rs          │    │    │
@@ -67,13 +67,12 @@ edge-gateway/
 │   └── types.rs               #   Shared type definitions
 │
 ├── adapters/
-│   ├── spin/                  # Fermyon Cloud + Akamai Functions
+│   ├── spin/                  # Akamai Functions
 │   │   ├── src/lib.rs         #   Spin SDK HTTP router, KV store integration
 │   │   ├── spin.toml          #   App manifest (routes, variables, files)
 │   │   └── static/            #   Built frontend files (gitignored)
 │   ├── fastly/                # Fastly Compute (scaffolded)
-│   ├── workers/               # Cloudflare Workers (scaffolded)
-│   └── lambda/                # AWS Lambda (scaffolded)
+│   └── workers/               # Cloudflare Workers (scaffolded)
 │
 └── models/toxicity/           # ML model artifacts
     ├── model.nnef.tar         #   53 MB Tract NNEF model (gitignored)
@@ -84,8 +83,8 @@ edge-gateway/
 
 - **One codebase, many platforms**: The core compiles once to `wasm32-wasip1`. Each
   adapter is ~200-400 lines that adapts the platform's HTTP/KV APIs to core functions.
-- **Identical behavior**: Both Fermyon Cloud and Akamai Functions use the exact same
-  Spin adapter and WASM binary. The only difference is the platform runtime.
+- **Identical behavior**: All platforms use the exact same core logic compiled to
+  `wasm32-wasip1`. Each adapter maps the platform's HTTP/KV APIs to core functions.
 - **Testable in isolation**: The core has unit tests that run without any platform SDK.
 
 ### The 8-Step Moderation Pipeline
@@ -191,29 +190,6 @@ runtime. Full details in `edge-gateway/models/README.md`.
 
 ## 3. Platform Deployment Topology
 
-### Fermyon Cloud — Single Region
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        FERMYON CLOUD                                  │
-│                                                                      │
-│                    ┌──────────────────┐                               │
-│                    │  us-ord (Chicago) │                               │
-│                    │                  │                               │
-│  User (Chicago) ──▶│  WASM Gateway    │  ◀── User (Frankfurt)         │
-│                    │  + KV Store      │                               │
-│                    │  + Frontend      │                               │
-│                    └──────────────────┘  ◀── User (Singapore)         │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-- **One compute region** (us-ord / Chicago)
-- No edge layer — TLS terminates at the compute region
-- All users worldwide talk to Chicago
-- Latency scales linearly with geographic distance
-- Deployed via `spin cloud deploy`
-
 ### Akamai Functions — Global Edge + Multi-Region Compute
 
 ```
@@ -304,52 +280,34 @@ curl -si https://morally-civil-urchin.edgecompute.app/gateway/health | grep x-se
 
 See `results/fastly/edge_verification.md` (private) for full header dumps from all regions.
 
-### AWS Lambda — Single-Region Native ARM64 (Regional Baseline)
-
-```
-Client --> [Lambda Function URL] --> Lambda ARM64 --> DynamoDB (cache)
-```
-
-- **Not WASM**: Lambda runs a native ARM64 binary compiled from the same Rust codebase
-- **Single region**: Deployed to us-east-1 (N. Virginia)
-- **Zero scheduling overhead**: Lambda environments stay warm for ~15 minutes
-- **Sub-millisecond processing**: Native ARM64 processes faster than WASM platforms
-- **DynamoDB caching**: Uses DynamoDB on-demand for verdict caching (instead of KV stores)
-- **Function URL**: Direct HTTPS endpoint, no API Gateway (for fair benchmarking)
-- **Embedded ML**: ToxicityClassifier loaded from `/var/task/models/toxicity/` via `OnceLock` (same lazy-init pattern as Spin)
-- **Frontend dashboard**: Svelte UI embedded via `include_dir` (same approach as Fastly)
-- **ML inference**: runs on native ARM64 (significantly faster than WASM)
-- Remote clients pay full network RTT to us-east-1
-- Deployed via `cargo lambda deploy` with `--include models/toxicity` and `--s3-bucket` for the 53MB+ package
-
 ### Why Architecture Matters for Performance
 
-| Step | Fastly (single-tier) | Akamai (two-tier) | Fermyon (single-region) | AWS Lambda (regional) |
-|------|---------------------|-------------------|------------------------|----------------------|
-| TLS termination | At PoP | At edge PoP | At compute | At Lambda URL |
-| Route to compute | **N/A (same node)** | Internal hop | N/A (single region) | N/A (single region) |
-| Schedule WASM/runtime | **Pre-warmed** | On-demand | On-demand | **Warm Lambda** |
-| Execute logic | WASM | WASM | WASM | **Native ARM64** |
+| Step | Fastly (single-tier) | Akamai (two-tier) | Cloudflare Workers |
+|------|---------------------|-------------------|--------------------|
+| TLS termination | At PoP | At edge PoP | At PoP |
+| Route to compute | **N/A (same node)** | Internal hop | **N/A (same node)** |
+| Schedule WASM/runtime | **Pre-warmed** | On-demand | **Pre-warmed** |
+| Execute logic | WASM | WASM | WASM |
 
 Server processing time is similar across WASM platforms. The dominant performance differentiator is **platform scheduling overhead** — the cost of on-demand dispatch vs pre-warmed isolates. Benchmark results (private) quantify this gap. See `results/` (gitignored).
 
 ### Platform Comparison
 
-| Aspect | Fermyon Cloud | Akamai Functions | Fastly Compute | AWS Lambda |
-|--------|--------------|-----------------|---------------|------------|
-| Architecture | Single-region | Two-tier (edge + compute) | **Single-tier (PoP = compute)** | Single-region |
-| Runtime | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | **Native ARM64** |
-| Execution location | US-ORD only | Compute regions (3+) | **Directly at PoP** | us-east-1 only |
-| Scheduling model | On-demand | On-demand | **Pre-warmed** | **Warm** |
-| Compute regions | 1 (us-ord) | 3+ (us-ord, de-fra-2, sg-sin-2) | 4+ PoPs (DFW, CHI, FRA, SIN) | 1 (us-east-1) |
-| Edge layer | None | 4,200+ Akamai CDN PoPs | Fastly PoP network | None |
-| Auto-replication | No | Yes | Yes | No |
-| Nearest-region routing | No | Yes (akaalb cookie) | Yes (anycast DNS) | No |
-| TLS termination | At compute | At edge PoP | At PoP | At Function URL |
-| Filesystem access | Yes | Yes | No | Yes |
-| Caching backend | Spin KV | Spin KV | Fastly KV Store | DynamoDB |
-| Frontend dashboard | Spin static fileserver | Spin static fileserver | `include_dir` embedded | `include_dir` embedded |
-| Deploy command | `spin cloud deploy` | `spin aka deploy` | `fastly compute publish` | `cargo lambda deploy` |
+| Aspect | Akamai Functions | Fastly Compute | Cloudflare Workers |
+|--------|-----------------|---------------|--------------------|
+| Architecture | Two-tier (edge + compute) | **Single-tier (PoP = compute)** | Single-tier (PoP = compute) |
+| Runtime | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) | WASM (`wasm32-wasip1`) |
+| Execution location | Compute regions (3+) | **Directly at PoP** | Directly at PoP |
+| Scheduling model | On-demand | **Pre-warmed** | **Pre-warmed** |
+| Compute regions | 3+ (us-ord, de-fra-2, sg-sin-2) | 4+ PoPs (DFW, CHI, FRA, SIN) | 300+ PoPs globally |
+| Edge layer | 4,200+ Akamai CDN PoPs | Fastly PoP network | Cloudflare edge network |
+| Auto-replication | Yes | Yes | Yes |
+| Nearest-region routing | Yes (akaalb cookie) | Yes (anycast DNS) | Yes (anycast DNS) |
+| TLS termination | At edge PoP | At PoP | At PoP |
+| Filesystem access | Yes | No | No |
+| Caching backend | Spin KV | Fastly KV Store | Workers KV |
+| Frontend dashboard | Spin static fileserver | `include_dir` embedded | Workers Sites |
+| Deploy command | `spin aka deploy` | `fastly compute publish` | `wrangler deploy` |
 
 ---
 
@@ -428,7 +386,7 @@ Client                    Edge PoP (Akamai only)        Compute Region
                            ▼               ▼              ▼
                    ┌──────────────────────────────────────────┐
                    │         Target Platform                    │
-                   │  (Fermyon Cloud / Akamai Functions / ...)  │
+                   │  (Akamai / Fastly / Cloudflare Workers)    │
                    └──────────────────────────────────────────┘
 ```
 
@@ -487,7 +445,7 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
 ## 6. Performance Results
 
 Benchmark results are stored in `results/` (gitignored — not in this repository).
-The benchmark compares all five platforms across three geographic regions using
+The benchmark compares all three platforms across three geographic regions using
 the primary suite (rules-only) and stretch suite (embedded ML). Results include
 per-region p50/p95 latencies, throughput, cold start times, and ML inference.
 
@@ -514,7 +472,7 @@ To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 ### Secrets management
 
 - No API keys needed for moderation (all logic is embedded)
-- Platform credentials (`spin cloud login`, `spin aka login`) are session-based, not stored in code
+- Platform credentials (`spin aka login`, etc.) are session-based, not stored in code
 - `gateway_platform` and `gateway_region` are set via `--variable` at deploy time
 - `.env.example` and `cost-config.example.yaml` contain placeholders only
 - `results/` directory is gitignored (may contain runner IPs)
@@ -530,7 +488,7 @@ To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 4. Add `deploy-<platform>` target to root `Makefile`
 5. Deploy and run validation: `make validate PLATFORM=<name> URL=<url>`
 6. Run benchmarks: `make bench-multiregion PLATFORM=<name> URL=<url> BENCH_FLAGS="--ml --cold"`
-7. Generate scorecard: `make scorecard A=results/fermyon/... B=results/<platform>/...`
+7. Generate scorecard: `make scorecard A=results/akamai/... B=results/<platform>/...`
 
 The benchmark scripts, k6 runners, and automation pipeline are all platform-agnostic.
 No new benchmark code is needed — only the adapter.

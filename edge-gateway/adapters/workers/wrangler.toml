@@ -2,6 +2,9 @@ name = "wasm-prompt-firewall"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-12-01"
 workers_dev = true
+# Requires Workers Paid plan ($5/mo) for benchmarking.
+# Free tier rate limits cause 41% errors at 50 concurrent VUs.
+usage_model = "standard"
 
 [vars]
 INFERENCE_URL = "https://your-inference-service.example.com"

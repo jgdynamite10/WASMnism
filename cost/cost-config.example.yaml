@@ -17,14 +17,6 @@ platforms:
     free_cdn_requests: 1000000       # 1M/mo
     notes: "Source: fastly.com/pricing (April 2026)"
 
-  fermyon:
-    starter_monthly: 0.00
-    starter_requests: 100000         # 100K/mo
-    growth_monthly: 19.38
-    growth_requests: 1000000         # 1M/mo
-    bandwidth_per_gb: 0.00           # included in plan
-    notes: "Source: fermyon.com/pricing — plan-based, no per-ms compute billing"
-
   akamai:
     pricing: "contract-based"
     notes: "Not publicly listed. Contact Akamai sales for quote."
@@ -40,21 +32,10 @@ platforms:
     free_cpu_ms: 30000000            # 30M/mo
     notes: "Source: developers.cloudflare.com/workers/platform/pricing"
 
-  lambda:
-    request_per_1m: 0.20
-    compute_per_gb_second: 0.0000133334  # ARM64 rate
-    memory_mb: 128
-    bandwidth_per_gb: 0.09
-    free_requests: 1000000           # 1M/mo
-    free_gb_seconds: 400000          # 400K GB-s/mo
-    notes: "Source: aws.amazon.com/lambda/pricing — ARM64, us-east-1"
-
 benchmark:
   avg_response_size_kb: 0.7          # measured from /gateway/moderate
   avg_request_size_kb: 0.2
   avg_cpu_ms_fastly: REPLACE_ME      # fill from your benchmark medians
   avg_cpu_ms_akamai: REPLACE_ME      # fill from your benchmark medians
-  avg_cpu_ms_fermyon: REPLACE_ME     # fill from your benchmark medians
   avg_cpu_ms_workers: REPLACE_ME     # fill from your benchmark medians
-  avg_cpu_ms_lambda: REPLACE_ME      # fill from your benchmark medians
   cache_hit_rate: 0.0                # basic test, no caching

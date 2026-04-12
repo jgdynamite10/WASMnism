@@ -8,8 +8,8 @@ set -euo pipefail
 #   ./bench/reproduce.sh <platform> <gateway-url> [--ml] [--cold] [--region <name>]
 #
 # Examples:
-#   ./bench/reproduce.sh fermyon https://wasm-prompt-firewall-imjy4pe0.fermyon.app
-#   ./bench/reproduce.sh akamai  https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app --ml --cold
+#   ./bench/reproduce.sh akamai  https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
+#   ./bench/reproduce.sh fastly  https://morally-civil-urchin.edgecompute.app --cold
 #   ./bench/reproduce.sh akamai  https://your-gateway.fwf.app --region us-ord
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -74,15 +74,15 @@ fi
 echo "  Health check: HTTP ${HTTP_CODE} — OK"
 echo ""
 
-# ── Step 2: Validation (9 scenarios) ────────────────────────
-echo "=== Step 2: Validation suite (9 scenarios) ==="
+# ── Step 2: Validation (8 rule scenarios, ML skipped) ──────
+echo "=== Step 2: Validation suite (rules-only) ==="
 if ! "${SCRIPT_DIR}/run-validation.sh" "${PLATFORM}" "${GATEWAY_URL}"; then
     echo ""
     echo "FAIL: Validation did not pass. Fix issues before benchmarking."
     exit 1
 fi
 echo ""
-echo "  Validation: 9/9 PASS"
+echo "  Validation: PASS"
 echo ""
 
 # ── Step 3: 7-run benchmark suite ───────────────────────────

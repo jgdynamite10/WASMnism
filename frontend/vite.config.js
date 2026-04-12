@@ -8,12 +8,12 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/gateway': {
-        target: 'https://wasm-prompt-firewall-imjy4pe0.fermyon.app',
+        target: 'https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app',
         changeOrigin: true,
         secure: true,
       },
       '/api': {
-        target: 'https://wasm-prompt-firewall-imjy4pe0.fermyon.app',
+        target: 'https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app',
         changeOrigin: true,
         secure: true,
       }

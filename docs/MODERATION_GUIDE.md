@@ -1,7 +1,7 @@
 # AI Prompt Firewall — Moderation Architecture Guide
 
 > Replication reference for implementing the WASM prompt firewall across all
-> target platforms (Spin/Akamai, Fastly Compute, Cloudflare Workers, AWS Lambda).
+> target platforms (Akamai Functions, Fastly Compute, Cloudflare Workers).
 
 ## Concept
 
@@ -29,7 +29,7 @@ User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
 
 The benchmark question: *How much latency does a WASM prompt firewall add at
 the edge?* This gateway runs identically on Akamai, Fastly, Cloudflare, and
-Lambda — the scorecard compares overhead across all four.
+the scorecard compares overhead across all three.
 
 ## Primary Endpoint
 
@@ -173,7 +173,7 @@ Strictest verdict wins when multiple flags are present: `block > review > allow`
     "hash": "sha256:..."
   },
   "gateway": {
-    "platform": "spin|fastly|workers|lambda",
+    "platform": "akamai|fastly|workers",
     "region": "us-ord",
     "request_id": "uuid"
   }
@@ -182,7 +182,7 @@ Strictest verdict wins when multiple flags are present: `block > review > allow`
 
 ## Platform Adapter Checklist
 
-When implementing a new adapter (Fastly, Workers, Lambda), each must provide:
+When implementing a new adapter (Fastly, Workers, etc.), each must provide:
 
 ### Required (platform-specific)
 
@@ -285,13 +285,12 @@ against any deployed gateway to prove moderation correctness.
 ./bench/run-validation.sh <platform> <gateway_url>
 
 # All platforms:
-./bench/run-validation.sh spin    https://wasm-prompt-firewall-imjy4pe0.fermyon.app
+./bench/run-validation.sh akamai  https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
 ./bench/run-validation.sh fastly  https://<fastly-url>
 ./bench/run-validation.sh workers https://<workers-url>
-./bench/run-validation.sh lambda  https://<lambda-url>
 ```
 
-All four must produce `9/9 PASS` before performance benchmarks are valid.
+All three must produce `9/9 PASS` before performance benchmarks are valid.
 See `docs/benchmark_contract.md` section 9 for full validation contract.
 
 ## Performance Benchmark Suite
@@ -301,10 +300,9 @@ SLOs, and fairness rules. Quick reference:
 
 ```bash
 # Validation (9 scenarios, must pass before benchmarking)
-./bench/run-validation.sh spin https://wasm-prompt-firewall-imjy4pe0.fermyon.app
+./bench/run-validation.sh akamai https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
 
 # Primary suite (rules only) + stretch (ML)
-make benchmark PLATFORM=fermyon URL=https://wasm-prompt-firewall-imjy4pe0.fermyon.app BENCH_FLAGS="--ml"
 make benchmark PLATFORM=akamai  URL=https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app BENCH_FLAGS="--ml"
 
 # With cold start tests (~100 min)

@@ -1,5 +1,8 @@
 # ML Model: MiniLMv2-toxic-jigsaw
 
+> **Note:** ML models are used on the `ml-inference` branch (Tier 2) only.
+> The `rules-only` branch does not use ML inference.
+
 ## Overview
 
 A distilled MiniLM v2 transformer (22.7M parameters) fine-tuned on the
@@ -96,12 +99,12 @@ startup latency in WASM. Tract's NNEF format is a simple tar archive of
 tensor files — no protobuf needed. This reduces cold start model
 deserialization significantly compared to ONNX.
 
-## ML availability by platform
+## ML availability by platform (Tier 2 only)
 
 | Platform | ML Support | Why |
 |----------|-----------|-----|
-| Fermyon Cloud (Spin) | Yes | WASI filesystem mounts model files |
-| Akamai Functions (Spin) | Yes | Same Spin adapter |
+| Akamai Functions (Spin) | Yes | WASI filesystem mounts model files |
 | AWS Lambda | Yes | Native filesystem at `/var/task/models/toxicity/` |
-| Fastly Compute | No | No filesystem access in Fastly's WASM runtime |
-| Cloudflare Workers | No | `wasm32-unknown-unknown` target, no WASI filesystem |
+
+Tier 1 platforms (Fastly Compute, Cloudflare Workers) do not support ML inference
+due to runtime filesystem constraints.

@@ -4,8 +4,8 @@
 Usage: python3 build-scorecard.py <results_dir1> <results_dir2> [output_path] [--runner LABEL]
 
 Example:
-  python3 bench/build-scorecard.py results/fermyon/multiregion_20260402/us-ord/7run results/akamai/multiregion_20260404/us-ord/7run
-  python3 bench/build-scorecard.py results/fermyon/... results/akamai/... scorecard.md --runner "k6 us-ord"
+  python3 bench/build-scorecard.py results/akamai/multiregion_20260410/us-ord/7run results/fastly/multiregion_20260410/us-ord/7run
+  python3 bench/build-scorecard.py results/akamai/... results/fastly/... scorecard.md --runner "k6 us-ord"
 """
 
 import json

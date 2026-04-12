@@ -39,7 +39,17 @@ crash.log
 crash.*.log
 
 # --- Project context (private - do not commit) ---
+/AGENT_HANDOVER.md
+/PROJECT_STATE.md
+/templates/
 /docs/*.local.md
+/docs/AGENT_PLAYBOOK.md
+
+# --- Housekeeping scripts (local tooling, never public) ---
+/scripts/
+/bench/generate-scorecard.sh
+/bench/validate-results.py
+/bench/cleanup-stale.sh
 
 # --- Internal planning docs (local only) ---
 /docs/CLIPCLAP_INSPECTION.md
@@ -108,7 +118,7 @@ edge-gateway/adapters/fastly/pkg/
 edge-gateway/adapters/fastly/bin/
 edge-gateway/adapters/fastly/static/
 
-# --- Lambda build artifacts ---
+# --- Lambda build artifacts (Tier 2 / ml-inference branch only) ---
 edge-gateway/adapters/lambda/static/
 edge-gateway/adapters/lambda/models/
 

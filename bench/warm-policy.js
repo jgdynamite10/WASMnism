@@ -8,7 +8,7 @@ const processingMs = new Trend("server_processing_ms", true);
 
 const BASE_URL =
   __ENV.GATEWAY_URL ||
-  "https://wasm-prompt-firewall-imjy4pe0.fermyon.app";
+  "https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app";
 
 const PROMPTS = [
   "What is the weather like today?",

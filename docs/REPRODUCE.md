@@ -21,12 +21,6 @@ spin plugins install aka
 # Fastly CLI (for Fastly Compute deployment)
 brew install fastly/tap/fastly
 
-# cargo-lambda (for AWS Lambda deployment)
-brew tap cargo-lambda/cargo-lambda && brew install cargo-lambda
-
-# AWS CLI (for Lambda infrastructure)
-brew install awscli
-
 # Wrangler CLI (for Cloudflare Workers deployment — installed via npx, no global install needed)
 # npx wrangler login
 
@@ -93,17 +87,11 @@ The rules-only pipeline (`ml: false`) — which is the primary benchmark suite �
 # Build WASM gateway + frontend
 make build
 
-# Deploy to Fermyon Cloud (requires `spin cloud login` first)
-make deploy-fermyon
-
-# Or deploy to Akamai Functions (requires `spin aka login` first)
+# Deploy to Akamai Functions (requires `spin aka login` first)
 make deploy-akamai
 
 # Or deploy to Fastly Compute (requires `fastly auth login` first)
 make deploy-fastly
-
-# Or deploy to AWS Lambda (requires AWS CLI configured + cargo-lambda installed)
-make deploy-lambda
 
 # Or deploy to Cloudflare Workers (requires `npx wrangler login` first)
 make deploy-workers
@@ -113,15 +101,12 @@ make deploy-workers
 
 ```bash
 # Primary suite only (~40 min: validate + 7 runs)
-make benchmark PLATFORM=fermyon URL=https://your-gateway.fermyon.app
 make benchmark PLATFORM=akamai  URL=https://your-gateway.fwf.app
 make benchmark PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
-make benchmark PLATFORM=lambda  URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws
 make benchmark PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 
 # Primary + stretch (ML) suite (~60 min) — not available on Fastly or Workers
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml"
-make benchmark PLATFORM=lambda URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws BENCH_FLAGS="--ml"
 
 # Everything including cold start (~100 min) — not available on Fastly
 make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
@@ -153,10 +138,8 @@ make runners-status
 
 ```bash
 # From all 3 regions in parallel
-make bench-multiregion PLATFORM=fermyon URL=https://your-gateway.fermyon.app BENCH_FLAGS="--ml --cold"
 make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
 make bench-multiregion PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
-make bench-multiregion PLATFORM=lambda  URL=https://your-lambda-function-url.lambda-url.us-east-1.on.aws --cold
 make bench-multiregion PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 ```
 
@@ -175,9 +158,9 @@ Once you have results for two or more platforms:
 
 ```bash
 make scorecard \
-  A=results/fermyon/multiregion_20260402/us-ord/7run \
-  B=results/akamai/multiregion_20260404/us-ord/7run \
-  OUT=results/scorecard_fermyon_vs_akamai.md
+  A=results/akamai/multiregion_20260404/us-ord/7run \
+  B=results/fastly/multiregion_20260404/us-ord/7run \
+  OUT=results/scorecard_akamai_vs_fastly.md
 ```
 
 ## Adding a New Platform
@@ -188,7 +171,7 @@ make scorecard \
 3. Deploy to the platform
 4. Run: `make benchmark PLATFORM=<name> URL=<url> BENCH_FLAGS="--ml"`
 5. Or multi-region: `make bench-multiregion PLATFORM=<name> URL=<url>`
-6. Compare: `make scorecard A=results/fermyon/... B=results/<platform>/...`
+6. Compare: `make scorecard A=results/akamai/... B=results/<platform>/...`
 
 No new benchmark scripts, runners, or documentation needed.
 
@@ -252,6 +235,6 @@ These are separate concerns — most production deployments would use
 ## Known Caveats
 
 - **k6 maxDuration**: Cold start tests need high `maxDuration` (10 iterations x 120s gaps). The script sets this dynamically.
-- **Fermyon free tier**: May have rate limits or instance caps. Use a paid plan for benchmark accuracy.
+- **Paid tiers**: All platforms must use paid tiers for benchmark accuracy. See `.cursorrules` for tier details.
 - **Runner location matters**: Multi-region results isolate network latency. Single-region results from your laptop include your ISP latency.
 - **Model consistency**: All platforms must use the same `model.nnef.tar` and `vocab.txt`. Verify with checksums above.

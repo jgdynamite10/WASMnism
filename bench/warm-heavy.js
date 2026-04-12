@@ -7,7 +7,7 @@ const latency = new Trend("warm_heavy_latency", true);
 const processingMs = new Trend("server_processing_ms", true);
 const mlMs = new Trend("ml_inference_ms", true);
 
-const BASE_URL = __ENV.GATEWAY_URL || "https://wasm-prompt-firewall-imjy4pe0.fermyon.app";
+const BASE_URL = __ENV.GATEWAY_URL || "https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app";
 
 const PROMPTS = [
   "What is the weather like today?",
