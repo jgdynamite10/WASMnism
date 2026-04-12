@@ -2,29 +2,19 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLATFORM="${1:?Usage: $0 <platform-name> <gateway-url> [--ml]}"
-GATEWAY_URL="${2:?Usage: $0 <platform-name> <gateway-url> [--ml]}"
-RUN_ML=false
-
-for arg in "${@:3}"; do
-    case "$arg" in
-        --ml) RUN_ML=true ;;
-        *)    echo "Unknown flag: $arg"; exit 1 ;;
-    esac
-done
+PLATFORM="${1:?Usage: $0 <platform-name> <gateway-url>}"
+GATEWAY_URL="${2:?Usage: $0 <platform-name> <gateway-url>}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BASE_DIR="${SCRIPT_DIR}/../results/${PLATFORM}/7run_${TIMESTAMP}"
 mkdir -p "${BASE_DIR}"
 
 PRIMARY_TESTS=("warm-light" "warm-policy" "concurrency-ladder")
-STRETCH_TESTS=("warm-heavy" "consistency")
 
 echo "============================================"
-echo "  WASMnism 7-Run Benchmark"
+echo "  WASMnism 7-Run Benchmark (rules-only)"
 echo "  Platform: ${PLATFORM}"
 echo "  Gateway:  ${GATEWAY_URL}"
-echo "  ML tests: ${RUN_ML}"
 echo "  Results:  ${BASE_DIR}"
 echo "============================================"
 echo ""
@@ -35,39 +25,21 @@ for RUN in $(seq 1 7); do
 
     echo "=== Run ${RUN}/7 — $(date) ==="
 
-    # Warm-up request (rules only)
+    # Warm-up request
     curl -sf -X POST "${GATEWAY_URL}/gateway/moderate" \
         -H "Content-Type: application/json" \
-        -d '{"labels":["safe","unsafe"],"nonce":"warmup","text":"warm up request","ml":false}' \
+        -d '{"labels":["safe","unsafe"],"nonce":"warmup","text":"warm up request"}' \
         -o /dev/null -w "  Warm-up: HTTP %{http_code} in %{time_total}s\n"
     sleep 3
 
-    echo "  --- Primary suite ---"
     for TEST in "${PRIMARY_TESTS[@]}"; do
-        EXTRA_ARGS=""
-        if [ "${TEST}" = "concurrency-ladder" ]; then
-            EXTRA_ARGS="--env SKIP_ML=true"
-        fi
         echo "  Running ${TEST}..."
         k6 run \
             --env GATEWAY_URL="${GATEWAY_URL}" \
-            ${EXTRA_ARGS} \
             --summary-export="${RUN_DIR}/${TEST}.json" \
             --quiet \
             "${SCRIPT_DIR}/${TEST}.js"
     done
-
-    if $RUN_ML; then
-        echo "  --- Stretch suite ---"
-        for TEST in "${STRETCH_TESTS[@]}"; do
-            echo "  Running ${TEST}..."
-            k6 run \
-                --env GATEWAY_URL="${GATEWAY_URL}" \
-                --summary-export="${RUN_DIR}/${TEST}.json" \
-                --quiet \
-                "${SCRIPT_DIR}/${TEST}.js"
-        done
-    fi
 
     echo "  Run ${RUN} complete."
     echo ""

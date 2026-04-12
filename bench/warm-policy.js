@@ -39,7 +39,6 @@ export default function () {
     labels: ["safe", "unsafe"],
     nonce: `policy-${__VU}-${__ITER}`,
     text: text,
-    ml: false,
   });
 
   const res = http.post(`${BASE_URL}/gateway/moderate`, payload, {
@@ -52,13 +51,6 @@ export default function () {
     "has verdict": (r) => {
       try {
         return ["allow", "block", "review"].includes(r.json().verdict);
-      } catch {
-        return false;
-      }
-    },
-    "ml_toxicity is null": (r) => {
-      try {
-        return r.json().moderation.ml_toxicity === null || r.json().moderation.ml_toxicity === undefined;
       } catch {
         return false;
       }

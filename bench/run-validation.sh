@@ -11,7 +11,7 @@ PLATFORM="${1:?Usage: $0 <platform> <gateway_url>}"
 GATEWAY_URL="${2:?Usage: $0 <platform> <gateway_url>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== Moderation Validation Suite ==="
+echo "=== Moderation Validation Suite (rules-only) ==="
 echo "Platform:  ${PLATFORM}"
 echo "Gateway:   ${GATEWAY_URL}"
 echo ""
@@ -25,14 +25,8 @@ fi
 echo "Health check passed"
 echo ""
 
-# Rules-only branch: ML classifier has been stripped from all adapters.
-ML_ENABLED="false"
-echo "Note: ML toxicity checks disabled (rules-only branch)"
-echo ""
-
 k6 run \
     --env GATEWAY_URL="${GATEWAY_URL}" \
-    --env ML_ENABLED="${ML_ENABLED}" \
     "${SCRIPT_DIR}/moderation-validation.js"
 
 EXIT=$?

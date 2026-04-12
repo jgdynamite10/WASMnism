@@ -4,10 +4,8 @@ import { Rate, Trend } from "k6/metrics";
 
 const errorRate = new Rate("errors");
 const latency = new Trend("ladder_latency", true);
-const mlMs = new Trend("ml_inference_ms", true);
 
 const BASE_URL = __ENV.GATEWAY_URL || "https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app";
-const SKIP_ML = (__ENV.SKIP_ML || "false") === "true";
 
 export const options = {
   stages: [
@@ -38,7 +36,6 @@ export default function () {
     labels: ["safe", "unsafe"],
     nonce: `ladder-${__VU}-${__ITER}`,
     text: text,
-    ml: !SKIP_ML,
   });
 
   const res = http.post(`${BASE_URL}/gateway/moderate`, payload, {
@@ -57,11 +54,4 @@ export default function () {
 
   errorRate.add(!passed);
   latency.add(res.timings.duration);
-
-  try {
-    const body = res.json();
-    if (body.moderation && body.moderation.ml_toxicity) {
-      mlMs.add(body.moderation.ml_toxicity.inference_ms);
-    }
-  } catch {}
 }

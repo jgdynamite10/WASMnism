@@ -24,7 +24,6 @@ def extract(data):
     dur = m.get("http_req_duration", {})
     iters = m.get("iterations", {})
     errs = m.get("errors", {})
-    ml = m.get("ml_inference_ms", {})
     proc = m.get("server_processing_ms", m.get("processing_ms", {}))
 
     return {
@@ -37,8 +36,6 @@ def extract(data):
         "reqs": iters.get("count"),
         "rps": iters.get("rate"),
         "err": errs.get("value"),
-        "ml_p50": ml.get("med"),
-        "ml_p95": ml.get("p(95)"),
         "proc_p50": proc.get("med"),
     }
 
@@ -61,9 +58,7 @@ def main():
     base = Path(sys.argv[1])
     output = sys.argv[2] if len(sys.argv) > 2 else None
 
-    primary = ["warm-light", "warm-policy", "concurrency-ladder"]
-    stretch = ["warm-heavy", "consistency"]
-    tests = primary + stretch
+    tests = ["warm-light", "warm-policy", "concurrency-ladder"]
     runs = sorted(base.glob("run_*"))
 
     if len(runs) < 3:
@@ -76,19 +71,12 @@ def main():
     lines.append(f"")
     lines.append(f"Directory: {base}")
     lines.append(f"")
+    lines.append("---")
+    lines.append("")
+    lines.append("## Rules Pipeline Suite")
+    lines.append("")
 
-    for i, test in enumerate(tests):
-        if i == 0:
-            lines.append("---")
-            lines.append("")
-            lines.append("## Primary Suite (rules, ml:false)")
-            lines.append("")
-        elif test == stretch[0]:
-            lines.append("---")
-            lines.append("")
-            lines.append("## Stretch Suite (embedded ML)")
-            lines.append("")
-
+    for test in tests:
         all_metrics = {}
         valid_runs = 0
         for run_dir in runs:
@@ -107,8 +95,7 @@ def main():
         lines.append(f"| Metric | Median | Min | Max |")
         lines.append(f"|--------|--------|-----|-----|")
 
-        for key in ["p50", "p90", "p95", "avg", "max", "reqs", "rps", "err",
-                     "ml_p50", "ml_p95", "proc_p50"]:
+        for key in ["p50", "p90", "p95", "avg", "max", "reqs", "rps", "err", "proc_p50"]:
             vals = all_metrics.get(key, [])
             if not vals:
                 continue

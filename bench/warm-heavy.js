@@ -5,7 +5,6 @@ import { Rate, Trend } from "k6/metrics";
 const errorRate = new Rate("errors");
 const latency = new Trend("warm_heavy_latency", true);
 const processingMs = new Trend("server_processing_ms", true);
-const mlMs = new Trend("ml_inference_ms", true);
 
 const BASE_URL = __ENV.GATEWAY_URL || "https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app";
 
@@ -42,7 +41,7 @@ export default function () {
 
   const res = http.post(`${BASE_URL}/gateway/moderate`, payload, {
     headers,
-    tags: { endpoint: "moderate-ml" },
+    tags: { endpoint: "moderate-heavy" },
   });
 
   const passed = check(res, {
@@ -50,11 +49,6 @@ export default function () {
     "has verdict": (r) => {
       try {
         return ["allow", "block", "review"].includes(r.json().verdict);
-      } catch { return false; }
-    },
-    "has ml_toxicity": (r) => {
-      try {
-        return r.json().moderation.ml_toxicity !== null;
       } catch { return false; }
     },
   });
@@ -66,9 +60,6 @@ export default function () {
     const body = res.json();
     if (body.moderation) {
       processingMs.add(body.moderation.processing_ms);
-    }
-    if (body.moderation && body.moderation.ml_toxicity) {
-      mlMs.add(body.moderation.ml_toxicity.inference_ms);
     }
   } catch {}
 }

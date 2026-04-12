@@ -65,23 +65,9 @@ make prereqs
 
 ## Quick Reproduce (single region, from your machine)
 
-### 1. Download ML model files (optional — needed only for `ml: true` tests)
+> **Note:** ML model files are only needed on the `ml-inference` branch (Tier 2). This branch runs rules-only.
 
-```bash
-cd edge-gateway/models/toxicity/
-gh release download v0.2.0-models --repo jgdynamite/WASMnism
-
-# Verify checksums
-shasum -a 256 -c << 'CHECKSUMS'
-aaf95fcf4aef8e7636a7bf40e2cb3f4ed03eb039b8bd32e96c348224bca99377  model.nnef.tar
-04332de50cb467423bfd623703c8c05e830a57a2f325cda835a29bef7626655f  vocab.txt
-CHECKSUMS
-cd ../../..
-```
-
-The rules-only pipeline (`ml: false`) — which is the primary benchmark suite — builds and runs without the model files.
-
-### 2. Build and deploy
+### 1. Build and deploy
 
 ```bash
 # Build WASM gateway + frontend
@@ -97,7 +83,7 @@ make deploy-fastly
 make deploy-workers
 ```
 
-### 3. Run the full pipeline
+### 2. Run the full pipeline
 
 ```bash
 # Primary suite only (~40 min: validate + 7 runs)
@@ -105,14 +91,11 @@ make benchmark PLATFORM=akamai  URL=https://your-gateway.fwf.app
 make benchmark PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 make benchmark PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 
-# Primary + stretch (ML) suite (~60 min) — not available on Fastly or Workers
-make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml"
-
-# Everything including cold start (~100 min) — not available on Fastly
-make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
+# With cold start tests (~60 min)
+make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
 ```
 
-This runs: prerequisite check -> validation (9/9 must pass) -> 7-run suite -> median computation -> results document.
+This runs: prerequisite check -> validation (8/8 must pass) -> 7-run suite -> median computation -> results document.
 
 Results are saved to `results/<platform>/`.
 
@@ -138,7 +121,7 @@ make runners-status
 
 ```bash
 # From all 3 regions in parallel
-make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
+make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
 make bench-multiregion PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 make bench-multiregion PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
 ```
@@ -169,40 +152,13 @@ make scorecard \
    (see [MODERATION_GUIDE.md](MODERATION_GUIDE.md) for the adapter checklist)
 2. Add `make deploy-<platform>` target to `edge-gateway/Makefile`
 3. Deploy to the platform
-4. Run: `make benchmark PLATFORM=<name> URL=<url> BENCH_FLAGS="--ml"`
+4. Run: `make benchmark PLATFORM=<name> URL=<url>`
 5. Or multi-region: `make bench-multiregion PLATFORM=<name> URL=<url>`
 6. Compare: `make scorecard A=results/akamai/... B=results/<platform>/...`
 
 No new benchmark scripts, runners, or documentation needed.
 
-## ML Model
-
-The 53MB ML model (`model.nnef.tar`) is gitignored due to size. Download it from the GitHub Release:
-
-```bash
-cd edge-gateway/models/toxicity/
-gh release download v0.2.0-models --repo jgdynamite/WASMnism
-```
-
-Or download manually from: https://github.com/jgdynamite/WASMnism/releases/tag/v0.2.0-models
-
-The model must be at `edge-gateway/models/toxicity/model.nnef.tar` before building with ML support.
-
-See [edge-gateway/models/README.md](../edge-gateway/models/README.md) for:
-- Base model source (HuggingFace) and fine-tuning dataset (Jigsaw/Kaggle)
-- Full conversion pipeline (PyTorch → ONNX → vocabulary trim → Tract NNEF)
-- How to regenerate from scratch
-- SHA-256 checksums
-
-Verify model integrity:
-
-```bash
-cd edge-gateway/models
-shasum -a 256 -c << 'CHECKSUMS'
-aaf95fcf4aef8e7636a7bf40e2cb3f4ed03eb039b8bd32e96c348224bca99377  toxicity/model.nnef.tar
-04332de50cb467423bfd623703c8c05e830a57a2f325cda835a29bef7626655f  toxicity/vocab.txt
-CHECKSUMS
-```
+> ML model files are used on the `ml-inference` branch only. See that branch for model download instructions.
 
 ## Interpreting Results
 
@@ -212,7 +168,6 @@ CHECKSUMS
 |--------|--------------|
 | **Server processing p50** | Time the gateway spends on your request (rules only). Isolates compute from network. |
 | **Round-trip p50** | Total client-to-server-to-client time. Includes network latency. |
-| **ML inference p50** | Time for the neural network forward pass. Only on platforms with ML support. |
 | **Jitter (p95/p50)** | Latency consistency — lower is better. |
 | **Error rate** | Percentage of failed requests. |
 
@@ -227,14 +182,10 @@ compute performance and round-trip metrics to compare end-user experience.
 
 ### Cold start
 
-Rules-only cold start measures WASM module instantiation overhead.
-ML cold start adds model deserialization overhead for the 53MB NNEF model.
-These are separate concerns — most production deployments would use
-`ml: false` and never hit the model loading path.
+Cold start measures WASM module instantiation overhead for the rules-only pipeline.
 
 ## Known Caveats
 
 - **k6 maxDuration**: Cold start tests need high `maxDuration` (10 iterations x 120s gaps). The script sets this dynamically.
 - **Paid tiers**: All platforms must use paid tiers for benchmark accuracy. See `.cursorrules` for tier details.
 - **Runner location matters**: Multi-region results isolate network latency. Single-region results from your laptop include your ISP latency.
-- **Model consistency**: All platforms must use the same `model.nnef.tar` and `vocab.txt`. Verify with checksums above.

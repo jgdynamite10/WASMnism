@@ -20,9 +20,8 @@ covering system design, deployment topology, and benchmark infrastructure.
   │  k6 Load │─── HTTPS ─────▶│  │  │ (spin/       │   │                   │    │    │
   │  Runner  │◀───────────────│  │  │  fastly/     │   │  pipeline.rs      │    │    │
   └──────────┘                 │  │  │  workers)    │   │  policy.rs        │    │    │
-                               │  │  │              │   │  toxicity.rs      │    │    │
-                               │  │  └─────────────┘   │  tokenizer        │    │    │
-                               │  │                     │  normalize.rs     │    │    │
+                               │  │  │              │   │                   │    │    │
+                               │  │  └─────────────┘   │  normalize.rs     │    │    │
                                │  │                     │  hash.rs          │    │    │
                                │  │                     │  cache.rs         │    │    │
                                │  │                     └───────────────────┘    │    │
@@ -37,8 +36,8 @@ covering system design, deployment topology, and benchmark infrastructure.
 
 The project has three major components:
 
-1. **Edge Gateway** — A Rust codebase compiled to `wasm32-wasip1`, running an 8-step
-   content moderation pipeline with an embedded ML toxicity classifier
+1. **Edge Gateway** — A Rust codebase compiled to `wasm32-wasip1`, running a 7-step
+   content moderation pipeline
 2. **Frontend Dashboard** — A Svelte SaaS-style UI for interactive prompt evaluation
 3. **Benchmark Infrastructure** — k6 scripts, automation pipelines, and multi-region
    runner infrastructure for reproducible cross-platform performance measurement
@@ -56,9 +55,8 @@ to the core functions.
 ```
 edge-gateway/
 ├── core/                      # Shared library (platform-agnostic)
-│   ├── pipeline.rs            #   Request → 8-step moderation → response
+│   ├── pipeline.rs            #   Request → 7-step moderation → response
 │   ├── policy.rs              #   Rule engine: prohibited terms, PII, injection
-│   ├── toxicity.rs            #   ML model: ToxicityClassifier (Tract NNEF)
 │   ├── normalize.rs           #   Unicode NFC + leetspeak expansion
 │   ├── hash.rs                #   SHA-256 content hashing
 │   ├── cache.rs               #   CachedVerdict serialization
@@ -73,10 +71,6 @@ edge-gateway/
 │   │   └── static/            #   Built frontend files (gitignored)
 │   ├── fastly/                # Fastly Compute (scaffolded)
 │   └── workers/               # Cloudflare Workers (scaffolded)
-│
-└── models/toxicity/           # ML model artifacts
-    ├── model.nnef.tar         #   53 MB Tract NNEF model (gitignored)
-    └── vocab.txt              #   8,000-token WordPiece vocabulary
 ```
 
 ### Why this pattern works
@@ -87,7 +81,7 @@ edge-gateway/
   `wasm32-wasip1`. Each adapter maps the platform's HTTP/KV APIs to core functions.
 - **Testable in isolation**: The core has unit tests that run without any platform SDK.
 
-### The 8-Step Moderation Pipeline
+### The 7-Step Pipeline
 
 Every `POST /gateway/moderate` request flows through these steps:
 
@@ -96,7 +90,7 @@ Request JSON
     │
     ▼
 ┌─ Step 1: Parse & validate ─────────────────────────────────────────────┐
-│  Extract labels[], text, nonce, ml flag                                 │
+│  Extract labels[], text, nonce                                          │
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -108,7 +102,7 @@ Request JSON
 │  • Code injection detection (XSS, SQL injection)                        │
 │  • PII detection (email, phone, SSN regex)                              │
 │                                                                         │
-│  If BLOCK detected → return immediately (no cache, no ML)               │
+│  If BLOCK detected → return immediately (no cache)                       │
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -124,67 +118,22 @@ Request JSON
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
-┌─ Step 5: ML toxicity (if ml:true AND text present) ────────────────────┐
-│  • WordPiece tokenization (custom Rust tokenizer, 8k vocab)            │
-│  • Tensor construction (input_ids, attention_mask, token_type_ids)      │
-│  • Forward pass through MiniLMv2 (22.7M params, Tract NNEF)            │
-│  • Sigmoid → per-category probabilities (toxic, severe_toxic)           │
-│                                                                         │
-│  Performance: varies significantly by platform (see private results)   │
-│  When ml:false → this entire step is skipped                            │
-└─────────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─ Step 6: Post-check ──────────────────────────────────────────────────┐
+┌─ Step 5: Post-check ──────────────────────────────────────────────────┐
 │  Evaluate classification scores against thresholds                      │
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
-┌─ Step 7: Verdict merge ───────────────────────────────────────────────┐
-│  Combine pre-check + post-check + ML results                           │
+┌─ Step 6: Verdict merge ───────────────────────────────────────────────┐
+│  Combine pre-check + post-check results                                 │
 │  Strictest wins: block > review > allow                                │
 └─────────────────────────────────────────────────────────────────────────┘
     │
     ▼
-┌─ Step 8: Response ─────────────────────────────────────────────────────┐
+┌─ Step 7: Response ─────────────────────────────────────────────────────┐
 │  JSON response with verdict, moderation details, timing, cache info     │
 │  Cache MISS → write verdict to KV store for future requests             │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
-
-### ML Model Architecture
-
-```
-Input text
-    │
-    ▼
-┌─ WordPiece Tokenizer ──────┐
-│  Custom Rust implementation  │
-│  8,000-token vocabulary      │
-│  Max sequence length: 128    │
-└─────────────────────────────┘
-    │
-    ▼  [input_ids, attention_mask, token_type_ids]
-    │
-┌─ MiniLMv2 Transformer ─────┐
-│  22.7M parameters            │
-│  Fine-tuned on Jigsaw data   │
-│  Runs in Tract NNEF engine   │
-│  Inside WASM sandbox         │
-└─────────────────────────────┘
-    │
-    ▼  Raw logits
-    │
-┌─ Sigmoid Activation ───────┐      ┌──────────────┐
-│  toxic: 0.0 → 1.0           │─────▶│  ≥ 0.80: BLOCK│
-│  severe_toxic: 0.0 → 1.0    │      │  ≥ 0.50: REVIEW│
-└─────────────────────────────┘      │  < 0.50: (none)│
-                                      └──────────────┘
-```
-
-**Model provenance:** PyTorch → ONNX (opset 14, fixed shapes) → vocabulary-trimmed
-(30k → 8k tokens) → Tract NNEF. NNEF avoids expensive protobuf parsing in the WASM
-runtime. Full details in `edge-gateway/models/README.md`.
 
 ---
 
@@ -313,42 +262,18 @@ Server processing time is similar across WASM platforms. The dominant performanc
 
 ## 4. Request Lifecycle
 
-### Rules-Only Request (`ml: false`)
+### Moderation request
 
 ```
 Client                    Edge PoP (Akamai only)        Compute Region
   │                              │                           │
   │── POST /gateway/moderate ──▶│                           │
-  │   { ml: false, text: ... }  │── forward ───────────────▶│
+  │   { labels[], text, ... }   │── forward ───────────────▶│
   │                              │                           │── parse JSON
   │                              │                           │── normalize + hash
   │                              │                           │── pre-check (rules)
   │                              │                           │── cache lookup
   │                              │                           │── classify (mock)
-  │                              │                           │── [skip ML]
-  │                              │                           │── merge verdict
-  │                              │                           │── cache write
-  │                              │◀── response ──────────────│
-  │◀── JSON response ───────────│                           │
-  │                              │                           │
-```
-
-### ML Request (`ml: true`)
-
-```
-Client                    Edge PoP (Akamai only)        Compute Region
-  │                              │                           │
-  │── POST /gateway/moderate ──▶│                           │
-  │   { ml: true, text: ... }   │── forward ───────────────▶│
-  │                              │                           │── parse JSON
-  │                              │                           │── normalize + hash
-  │                              │                           │── pre-check (rules)
-  │                              │                           │── cache lookup
-  │                              │                           │── classify (mock)
-  │                              │                           │── ML: tokenize text
-  │                              │                           │── ML: build tensors
-  │                              │                           │── ML: Tract forward pass
-  │                              │                           │── ML: sigmoid scores
   │                              │                           │── merge verdict
   │                              │                           │── cache write
   │                              │◀── response ──────────────│
@@ -393,26 +318,24 @@ Client                    Edge PoP (Akamai only)        Compute Region
 ### Automation Pipeline
 
 ```
-make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
+make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
     │
     ├─ 1. deploy/k6-runner-setup.sh sync     Copy latest bench/ scripts to all 3 runners
     │
     ├─ 2. bench/run-multiregion.sh           Launch reproduce.sh on each runner via SSH
     │      │
-    │      ├─ [us-ord]     bench/reproduce.sh akamai <url> --ml --cold --region us-ord
-    │      ├─ [eu-central] bench/reproduce.sh akamai <url> --ml --cold --region eu-central
-    │      └─ [ap-south]   bench/reproduce.sh akamai <url> --ml --cold --region ap-south
+    │      ├─ [us-ord]     bench/reproduce.sh akamai <url> --cold --region us-ord
+    │      ├─ [eu-central] bench/reproduce.sh akamai <url> --cold --region eu-central
+    │      └─ [ap-south]   bench/reproduce.sh akamai <url> --cold --region ap-south
     │                │
     │                ├─ Step 0: Prerequisite check (curl, k6, python3)
     │                ├─ Step 1: Health check (GET /gateway/health → 200)
-    │                ├─ Step 2: Validation (9 scenarios, 34 checks → 9/9 PASS)
+    │                ├─ Step 2: Validation (8 scenarios, 34 checks → 8/8 PASS)
     │                ├─ Step 3: 7-run benchmark suite
-    │                │    ├─ Primary: warm-light, warm-policy, concurrency-ladder
-    │                │    └─ Stretch (if --ml): warm-heavy, consistency
+    │                │    └─ Primary: warm-light, warm-policy, concurrency-ladder
     │                ├─ Step 4: Compute medians (python3 compute-medians.py)
     │                └─ Step 5: Cold start tests (if --cold)
-    │                     ├─ 10 iterations, USE_ML=false (rules cold start)
-    │                     └─ 10 iterations, USE_ML=true  (ML cold start)
+    │                     └─ 10 iterations (rules cold start)
     │
     ├─ 3. Collect results from all runners via SCP
     │      └─ results/<platform>/multiregion_<timestamp>/{us-ord,eu-central,ap-south}/
@@ -425,12 +348,9 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
 | Suite | Test | VUs | Duration | What It Measures |
 |-------|------|-----|----------|-----------------|
 | **Primary** | Warm Light | 10 | 60s | Health endpoint latency (GET) |
-| **Primary** | Warm Policy | 10 | 60s | Full rule pipeline, `ml: false` |
+| **Primary** | Warm Policy | 10 | 60s | Full rule pipeline |
 | **Primary** | Concurrency Ladder | 1→50 | 150s | Scaling under load, rules only |
 | **Primary** | Cold Start (rules) | 1 | ~20min | WASM instantiation (90s gaps) |
-| **Stretch** | Warm Heavy | 5 | 60s | Full moderation + ML inference |
-| **Stretch** | Consistency | 5 | 120s | ML latency jitter over time |
-| **Stretch** | Cold Start (ML) | 1 | ~20min | WASM + 53MB model deserialize |
 
 ### Statistical Method
 
@@ -446,8 +366,8 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--ml --cold"
 
 Benchmark results are stored in `results/` (gitignored — not in this repository).
 The benchmark compares all three platforms across three geographic regions using
-the primary suite (rules-only) and stretch suite (embedded ML). Results include
-per-region p50/p95 latencies, throughput, cold start times, and ML inference.
+the primary suite (rules-only). Results include
+per-region p50/p95 latencies, throughput, and cold start times.
 
 To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 
@@ -458,7 +378,6 @@ To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 ### What runs inside the WASM sandbox
 
 - All text processing (normalization, hashing, pattern matching)
-- ML inference (Tract NNEF forward pass)
 - Verdict composition
 - No outbound network calls for moderation (all computation is local)
 
@@ -487,7 +406,7 @@ To reproduce: see [docs/REPRODUCE.md](REPRODUCE.md).
 3. Add `deploy-<platform>` target to `edge-gateway/Makefile`
 4. Add `deploy-<platform>` target to root `Makefile`
 5. Deploy and run validation: `make validate PLATFORM=<name> URL=<url>`
-6. Run benchmarks: `make bench-multiregion PLATFORM=<name> URL=<url> BENCH_FLAGS="--ml --cold"`
+6. Run benchmarks: `make bench-multiregion PLATFORM=<name> URL=<url> BENCH_FLAGS="--cold"`
 7. Generate scorecard: `make scorecard A=results/akamai/... B=results/<platform>/...`
 
 The benchmark scripts, k6 runners, and automation pipeline are all platform-agnostic.

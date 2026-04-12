@@ -60,7 +60,6 @@ def extract_metrics(data):
     dur = m.get("http_req_duration", {})
     iters = m.get("iterations", {})
     errs = m.get("errors", {})
-    ml = m.get("ml_inference_ms", {})
     proc = m.get("server_processing_ms", m.get("processing_ms", {}))
 
     return {
@@ -73,9 +72,6 @@ def extract_metrics(data):
         "reqs": iters.get("count"),
         "rps": iters.get("rate"),
         "err": errs.get("value"),
-        "ml_p50": ml.get("med"),
-        "ml_avg": ml.get("avg"),
-        "ml_p95": ml.get("p(95)"),
         "proc_p50": proc.get("med"),
         "proc_avg": proc.get("avg"),
     }
@@ -91,7 +87,7 @@ def jitter(data):
     return None
 
 
-def section(title, fa, fb, name_a, name_b, show_ml=False, show_proc=False):
+def section(title, fa, fb, name_a, name_b, show_proc=False):
     lines = []
     lines.append(f"\n## {title}\n")
     lines.append(f"| Metric | {name_a} | {name_b} | Ratio |")
@@ -112,11 +108,6 @@ def section(title, fa, fb, name_a, name_b, show_ml=False, show_proc=False):
     row("Error rate", "err", fmt_pct)
 
     if show_proc:
-        row("Server processing p50", "proc_p50")
-
-    if show_ml:
-        row("ML inference p50", "ml_p50")
-        row("ML inference p95", "ml_p95")
         row("Server processing p50", "proc_p50")
 
     return "\n".join(lines)
@@ -142,7 +133,7 @@ def main():
     name_b = dir_b.parent.name.title()
 
     lines = []
-    lines.append(f"# WASMnism Benchmark Scorecard")
+    lines.append(f"# WASMnism Benchmark Scorecard (rules-only)")
     lines.append(f"")
     lines.append(f"**{name_a}** vs **{name_b}**")
     lines.append(f"")
@@ -150,23 +141,16 @@ def main():
     lines.append(f"- Runner: {runner}")
     lines.append(f"")
 
-    # Primary suite tests (filenames match run-suite.sh output)
-    primary_tests = [
-        ("Warm Light (Health Check, 10 VUs, 60s)", "warm-light.json", False, False),
-        ("Warm Policy (Rules Pipeline, 10 VUs, 60s)", "warm-policy.json", False, True),
-        ("Concurrency Ladder — Rules (1→50 VUs, 150s)", "concurrency-rules.json", False, False),
-    ]
-
-    # Stretch suite tests
-    stretch_tests = [
-        ("Warm Heavy (ML Inference, 5 VUs, 60s)", "warm-heavy.json", True, False),
-        ("Consistency — ML (5 VUs, 120s)", "consistency-ml.json", True, False),
+    tests = [
+        ("Warm Light (Health Check, 10 VUs, 60s)", "warm-light.json", False),
+        ("Warm Policy (Rules Pipeline, 10 VUs, 60s)", "warm-policy.json", True),
+        ("Concurrency Ladder (1→50 VUs, 150s)", "concurrency-rules.json", False),
     ]
 
     lines.append("\n---\n")
-    lines.append("# Primary Suite (rules, ml:false)\n")
+    lines.append("# Rules Pipeline Suite\n")
 
-    for title, filename, show_ml, show_proc in primary_tests:
+    for title, filename, show_proc in tests:
         path_a = dir_a / filename
         path_b = dir_b / filename
 
@@ -179,50 +163,23 @@ def main():
         db = load(path_b)
         fa = extract_metrics(da)
         fb = extract_metrics(db)
-        lines.append(section(title, fa, fb, name_a, name_b, show_ml, show_proc))
-
-    lines.append("\n---\n")
-    lines.append("# Stretch Suite (embedded ML, ml:true)\n")
-
-    for title, filename, show_ml, show_proc in stretch_tests:
-        path_a = dir_a / filename
-        path_b = dir_b / filename
-
-        if not path_a.exists() or not path_b.exists():
-            lines.append(f"\n## {title}\n")
-            lines.append("*Results not available for both platforms.*\n")
-            continue
-
-        da = load(path_a)
-        db = load(path_b)
-        fa = extract_metrics(da)
-        fb = extract_metrics(db)
-        lines.append(section(title, fa, fb, name_a, name_b, show_ml, show_proc))
-
-        ja = jitter(da)
-        jb = jitter(db)
-        if ja or jb:
-            ja_str = f"{ja:.2f}x" if ja else "—"
-            jb_str = f"{jb:.2f}x" if jb else "—"
-            lines.append(f"\n*Jitter (p95/p50): {name_a}={ja_str}, {name_b}={jb_str}*")
+        lines.append(section(title, fa, fb, name_a, name_b, show_proc))
 
     # Cold start — rules
     lines.append("\n---\n")
     lines.append("# Cold Start\n")
 
-    for label, filename in [("Cold Start — Rules", "cold-start-rules.json"), ("Cold Start — ML", "cold-start-ml.json")]:
-        path_a = dir_a / filename
-        path_b = dir_b / filename
-        if path_a.exists() and path_b.exists():
-            da = load(path_a)
-            db = load(path_b)
-            fa = extract_metrics(da)
-            fb = extract_metrics(db)
-            show_ml = "ML" in label
-            lines.append(section(label, fa, fb, name_a, name_b, show_ml))
-        else:
-            lines.append(f"\n## {label}\n")
-            lines.append("*Results not available for both platforms.*\n")
+    path_a = dir_a / "cold-start-rules.json"
+    path_b = dir_b / "cold-start-rules.json"
+    if path_a.exists() and path_b.exists():
+        da = load(path_a)
+        db = load(path_b)
+        fa = extract_metrics(da)
+        fb = extract_metrics(db)
+        lines.append(section("Cold Start — Rules", fa, fb, name_a, name_b))
+    else:
+        lines.append("\n## Cold Start — Rules\n")
+        lines.append("*Results not available for both platforms.*\n")
 
     output_text = "\n".join(lines) + "\n"
 

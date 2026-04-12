@@ -82,7 +82,7 @@ The gateway is a single Rust codebase with thin platform adapters. The core libr
 WASMnism/
 ├── Makefile                # Root automation: make build, make benchmark, make runners-up, etc.
 ├── edge-gateway/           # Rust workspace
-│   ├── core/               #   Shared logic: pipeline, policy, toxicity, tokenizer, timing
+│   ├── core/               #   Shared logic: pipeline, policy, normalize, hash, cache, timing
 │   ├── adapters/           #   Platform-specific HTTP adapters
 │   │   ├── spin/           #     Akamai Functions
 │   │   ├── fastly/         #     Fastly Compute
@@ -179,11 +179,11 @@ Set `"ml": false` (ML is not available on this branch).
 
 ### `GET /gateway/health`
 
-Returns gateway status, platform, region, and ML model readiness.
+Returns gateway status, platform, and region.
 
 ## Benchmark
 
-See the full [measurement contract](docs/benchmark_contract.md) (v3.1) for schemas, SLOs, and fairness rules.
+See the full [measurement contract](docs/benchmark_contract.md) (v3.2) for schemas, SLOs, and fairness rules.
 
 ### Running Benchmarks
 

@@ -117,7 +117,7 @@ help:
 	@echo "Benchmark (single region):"
 	@echo "  make validate PLATFORM=akamai URL=<url>              Run 9-scenario validation"
 	@echo "  make benchmark PLATFORM=akamai URL=<url>             Full pipeline: validate → 7-run → medians"
-	@echo "  make benchmark PLATFORM=akamai URL=<url> BENCH_FLAGS='--ml --cold'"
+	@echo "  make benchmark PLATFORM=akamai URL=<url> BENCH_FLAGS='--cold'"
 	@echo "  (PLATFORM defaults to 'akamai'; set to 'fastly', 'workers', etc. for other platforms)"
 	@echo ""
 	@echo "Benchmark (multi-region):"

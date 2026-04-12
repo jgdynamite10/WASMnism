@@ -23,7 +23,6 @@ User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
                           ├─ PII detection (regex: email, phone, SSN)
                           ├─ Injection detection (XSS, SQL, prompt injection)
                           ├─ Leetspeak expansion + re-scan
-                          ├─ ML toxicity classifier (MiniLMv2, 22.7M params)
                           └─ Policy verdict (allow / review / block)
 ```
 
@@ -48,10 +47,8 @@ the scorecard compares overhead across all three.
 |-------|---------|---------|
 | `labels` | — | Individual words for term scanning and hashing |
 | `nonce` | — | Client-supplied request identifier |
-| `text` | null | Full prompt for PII, injection, and ML analysis |
-| `ml` | `true` | Set `false` to skip ML inference (recommended for production) |
-
-When `ml` is `false`, the gateway runs only the rule-based pipeline (layers 1–2 below), delivering sub-5ms processing. When `ml` is `true` and `text` is present, the ML toxicity classifier (layer 3) also runs. ML inference latency varies significantly by platform — see benchmark results for specifics.
+| `text` | null | Full prompt for PII and injection analysis |
+| `ml` | — | Present for API compatibility; ML inference is not available on this branch |
 
 ## Defense Layers
 
@@ -97,45 +94,7 @@ exists in KV, it's returned immediately.
 
 **Core function:** `clipclap_gateway_core::pipeline::moderate_cached()`
 
-### Layer 3: ML Toxicity Classifier (opt-in)
-
-**What:** A MiniLMv2 neural network (22.7M parameters) fine-tuned on the
-Jigsaw toxic-comment dataset. Runs entirely inside the WASM sandbox via
-Tract NNEF — no external service calls.
-
-**When:** Only invoked when `ml` is `true` (or omitted) AND `text` is present.
-Skipped when `ml: false`, when `text` is absent/empty, or on cached hits.
-
-> **Production recommendation:** Use `ml: false` for latency-sensitive
-> workloads. The rule-based pipeline catches the vast majority of threats
-> in single-digit milliseconds. Reserve `ml: true` for asynchronous review or batch processing
-> where ML inference latency is acceptable.
-
-**Pipeline:**
-1. WordPiece tokenization (custom Rust tokenizer, 8k vocabulary)
-2. Tensor construction (input_ids, attention_mask, token_type_ids)
-3. Forward pass through the distilled transformer
-4. Sigmoid over the output logits → per-category probabilities
-
-**Categories:**
-
-| Output | Threshold | Verdict |
-|--------|-----------|---------|
-| `toxic` ≥ 0.80 | Hard block | `block` |
-| `severe_toxic` ≥ 0.80 | Hard block | `block` |
-| `toxic` ≥ 0.50 | Soft flag | `review` |
-| Below thresholds | — | no ML flag |
-
-**Why it matters:** The ML layer catches semantically toxic content that
-keyword rules miss. "You are pathetic and disgusting" contains no
-prohibited terms, but the model scores it at ~0.86 toxicity and blocks it.
-
-**Performance:** ML inference latency varies by platform (same WASM binary — the difference
-is platform runtime performance). Cold start adds model deserialization overhead. Warm
-inference is dominated by the forward pass since the model is already loaded. See benchmark
-results for platform-specific numbers.
-
-**Core function:** `clipclap_gateway_core::toxicity::ToxicityClassifier`
+> **Note:** ML toxicity classification is available on the `ml-inference` branch (Tier 2). On this branch, only rule-based checks are active.
 
 ### Verdict Rules
 
@@ -143,8 +102,6 @@ results for platform-specific numbers.
 |-----------|---------|
 | Injection detected (code or prompt) | `block` |
 | Prohibited term detected | `block` |
-| ML toxicity ≥ 0.80 | `block` |
-| ML toxicity ≥ 0.50 | `review` |
 | PII detected | `review` |
 | No flags | `allow` |
 
@@ -159,13 +116,7 @@ Strictest verdict wins when multiple flags are present: `block > review > allow`
     "policy_flags": ["prohibited_term", "pii_detected", "injection_attempt"],
     "confidence": 0.0,
     "blocked_terms": ["murder", "bloody"],
-    "processing_ms": 862.1,
-    "ml_toxicity": {
-      "toxic": 0.001,
-      "severe_toxic": 0.0001,
-      "inference_ms": 858.9,
-      "model": "MiniLMv2-toxic-jigsaw"
-    }
+    "processing_ms": 862.1
   },
   "classification": { ... },
   "cache": {
@@ -213,17 +164,15 @@ When implementing a new adapter (Fastly, Workers, etc.), each must provide:
 ## Pipeline Flow
 
 ```
-1. Parse JSON → extract labels[], text, ml
+1. Parse JSON → extract labels[], text, ml (`ml` accepted for API compatibility; not used on this branch)
 2. pre_check(labels, text) → policy pre-check
-   └─ BLOCKS → return Block immediately (no cache, no ML)
+   └─ BLOCKS → return Block immediately (no cache)
 3. kv_get(label_hash) → check verdict cache
    └─ HIT → return cached verdict
-4. If ml:true AND text is present and non-empty:
-   └─ ML toxicity inference (WordPiece tokenize → Tract forward pass)
-5. Build classification (policy scores + ML scores if present)
-6. post_check → evaluate classification scores
-7. merge_results(pre + post + ML) → final verdict
-8. Return response with verdict + timing
+4. Build classification from policy scores
+5. post_check → evaluate classification scores
+6. merge_results(pre + post) → final verdict
+7. Return response with verdict + timing
 ```
 
 ## Testing
@@ -262,7 +211,7 @@ curl -X POST https://<gateway>/gateway/moderate \
 
 ## Validation Suite
 
-A k6-based validation script (`bench/moderation-validation.js`) runs 9 scenarios
+A k6-based validation script (`bench/moderation-validation.js`) runs 8 scenarios
 against any deployed gateway to prove moderation correctness.
 
 ### Scenarios
@@ -277,7 +226,6 @@ against any deployed gateway to prove moderation correctness.
 | S6 | Leetspeak evasion | `block`, `prohibited_term` |
 | S7 | SQL injection | `block`, `injection_attempt` |
 | S8 | Repeat of S1 | `allow`, `cache.hit: true` |
-| S9 | Semantically toxic text (no keywords) | `block` or `review`, `ml_toxicity.toxic ≥ 0.50` |
 
 ### Running Validation
 
@@ -290,7 +238,7 @@ against any deployed gateway to prove moderation correctness.
 ./bench/run-validation.sh workers https://<workers-url>
 ```
 
-All three must produce `9/9 PASS` before performance benchmarks are valid.
+All three must produce `8/8 PASS` before performance benchmarks are valid.
 See `docs/benchmark_contract.md` section 9 for full validation contract.
 
 ## Performance Benchmark Suite
@@ -299,12 +247,12 @@ See [benchmark_contract.md](benchmark_contract.md) for full test definitions,
 SLOs, and fairness rules. Quick reference:
 
 ```bash
-# Validation (9 scenarios, must pass before benchmarking)
+# Validation (8 scenarios, must pass before benchmarking)
 ./bench/run-validation.sh akamai https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
 
-# Primary suite (rules only) + stretch (ML)
-make benchmark PLATFORM=akamai  URL=https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app BENCH_FLAGS="--ml"
+# Primary suite (rules-only)
+make benchmark PLATFORM=akamai URL=https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
 
 # With cold start tests (~100 min)
-make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--ml --cold"
+make benchmark PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
 ```

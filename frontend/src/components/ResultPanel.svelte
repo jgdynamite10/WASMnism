@@ -49,7 +49,7 @@
         <span class="verdict-label" style="color: {vm.color}">{vm.label}</span>
         <span class="verdict-sub">
           {#if verdict === 'allow'}
-            Prompt is safe to forward to the AI model
+            Prompt passed all rule checks
           {:else if verdict === 'review'}
             Prompt flagged for human review
           {:else}

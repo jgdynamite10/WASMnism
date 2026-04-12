@@ -4,12 +4,10 @@ import { Trend } from "k6/metrics";
 
 const roundTrip = new Trend("cold_round_trip", true);
 const serverProcessing = new Trend("cold_server_processing", true);
-const mlInference = new Trend("cold_ml_inference", true);
 
 const BASE_URL = __ENV.GATEWAY_URL || "https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app";
 const COLD_WAIT = parseInt(__ENV.COLD_WAIT || "120");
 const ITERATIONS = parseInt(__ENV.COLD_ITERATIONS || "10");
-const USE_ML = (__ENV.USE_ML || "false") === "true";
 
 export const options = {
   scenarios: {
@@ -23,13 +21,10 @@ export const options = {
   thresholds: {},
 };
 
-const mode = USE_ML ? "rules+ML" : "rules-only";
-
 const payload = JSON.stringify({
   labels: ["safe", "unsafe"],
   nonce: "cold-start-bench",
   text: "What is the weather like today?",
-  ml: USE_ML,
 });
 const headers = { "Content-Type": "application/json" };
 
@@ -50,15 +45,12 @@ export default function () {
     if (body.moderation) {
       serverProcessing.add(body.moderation.processing_ms);
     }
-    if (body.moderation && body.moderation.ml_toxicity) {
-      mlInference.add(body.moderation.ml_toxicity.inference_ms);
-    }
   } catch {}
 
   if (__ITER < ITERATIONS - 1) {
-    console.log(`  [${mode}] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Waiting ${COLD_WAIT}s for cold eviction...`);
+    console.log(`  [rules-only] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Waiting ${COLD_WAIT}s for cold eviction...`);
     sleep(COLD_WAIT);
   } else {
-    console.log(`  [${mode}] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Done.`);
+    console.log(`  [rules-only] Iteration ${__ITER + 1}/${ITERATIONS}: ${res.timings.duration.toFixed(0)}ms round-trip. Done.`);
   }
 }
