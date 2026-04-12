@@ -5,5 +5,4 @@ members = [
     "adapters/fastly",
     "adapters/workers",
 ]
-exclude = ["tools/convert-to-nnef"]
 resolver = "2"

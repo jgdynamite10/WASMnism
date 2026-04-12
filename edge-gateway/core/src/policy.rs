@@ -27,7 +27,6 @@ pub enum PolicyFlag {
     HighRiskScore,
     SafetyLabelTriggered,
     ImageBlocklisted,
-    MlToxicityDetected,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

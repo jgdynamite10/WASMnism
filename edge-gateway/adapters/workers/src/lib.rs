@@ -177,7 +177,7 @@ async fn handle_moderate(mut req: Request, env: &Env) -> Result<Response> {
         Err(err) => return error_json(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
     json_ok(&resp, &rid, &cfg)
 }
 

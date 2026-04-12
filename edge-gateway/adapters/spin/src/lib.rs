@@ -189,7 +189,7 @@ fn handle_moderate(req: Request, _params: Params) -> Result<impl IntoResponse> {
         Err(err) => return Ok(error_resp(&err, &rid, &cfg)),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
     Ok(json_ok(&resp, &rid, &cfg))
 }
 

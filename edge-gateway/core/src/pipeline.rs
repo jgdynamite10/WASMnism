@@ -5,10 +5,7 @@ use crate::handlers::mock_classify;
 use crate::hash::content_hash;
 use crate::normalize::normalize_labels;
 use crate::policy::{self, merge_results, PolicyConfig, PolicyResult, Verdict};
-#[cfg(feature = "ml")]
-use crate::policy::PolicyFlag;
 use crate::timing::{epoch_ms, Timer};
-use crate::toxicity::ToxicityClassifier;
 use crate::types::{ClassificationResponse, GatewayConfig};
 
 // ---------------------------------------------------------------------------
@@ -21,12 +18,8 @@ pub struct ModerationRequest {
     pub nonce: String,
     #[serde(default)]
     pub text: Option<String>,
-    #[serde(default = "default_ml")]
+    #[serde(default)]
     pub ml: bool,
-}
-
-fn default_ml() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,16 +40,6 @@ pub struct ModerationInfo {
     pub processing_ms: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safety_scores: Option<Vec<SafetyScore>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ml_toxicity: Option<ToxicityInfo>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ToxicityInfo {
-    pub toxic: f64,
-    pub severe_toxic: f64,
-    pub inference_ms: f64,
-    pub model: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,7 +114,6 @@ pub fn moderate_policy_only(
     config: &GatewayConfig,
     request_id: &str,
     content: Option<&[u8]>,
-    classifier: Option<&ToxicityClassifier>,
 ) -> ModerationResponse {
     let start = Timer::now();
     let normalized = normalize_labels(&req.labels);
@@ -139,23 +121,11 @@ pub fn moderate_policy_only(
 
     let pre = policy::pre_check(&normalized, req.text.as_deref());
 
-    let (ml_policy, ml_info) = if !req.ml || pre.verdict == Verdict::Block {
-        (None, None)
-    } else {
-        #[cfg(feature = "ml")]
-        { run_ml_toxicity(classifier, req.text.as_deref(), &req.labels) }
-        #[cfg(not(feature = "ml"))]
-        { let _ = classifier; (None, None) }
-    };
-
     let mock_classification = mock_classify(&normalized);
     let policy_config = PolicyConfig::default();
     let post = policy::post_check(&mock_classification, &policy_config);
 
-    let mut merged = merge_results(&pre, &post);
-    if let Some(ref ml) = ml_policy {
-        merged = merge_results(&merged, ml);
-    }
+    let merged = merge_results(&pre, &post);
 
     let total_ms = start.elapsed_ms();
 
@@ -167,7 +137,6 @@ pub fn moderate_policy_only(
             blocked_terms: merged.blocked_terms.clone(),
             processing_ms: total_ms,
             safety_scores: None,
-            ml_toxicity: ml_info,
         },
         classification: Some(mock_classification),
         cache: CacheInfo {
@@ -206,7 +175,6 @@ pub fn moderate_cached(
                 blocked_terms: cv.policy.blocked_terms.clone(),
                 processing_ms: total_ms,
                 safety_scores: None,
-                ml_toxicity: None,
             },
             classification: cv.classification.clone(),
             cache: CacheInfo { hit: true, hash, image_blocklisted: None },
@@ -214,8 +182,7 @@ pub fn moderate_cached(
         };
     }
 
-    // Cache miss: fall back to policy-only (no ML classifier in cached mode)
-    moderate_policy_only(req, config, request_id, content, None)
+    moderate_policy_only(req, config, request_id, content)
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +252,6 @@ pub fn post_moderate(
             blocked_terms: merged.blocked_terms.clone(),
             processing_ms: total_ms,
             safety_scores: if safety_scores.is_empty() { None } else { Some(safety_scores) },
-            ml_toxicity: None,
         },
         classification: Some(user_classification.clone()),
         cache: CacheInfo {
@@ -322,7 +288,6 @@ pub fn blocked_response(
             blocked_terms: pre.pre_policy.blocked_terms.clone(),
             processing_ms: total_ms,
             safety_scores: None,
-            ml_toxicity: None,
         },
         classification: None,
         cache: CacheInfo {
@@ -331,81 +296,6 @@ pub fn blocked_response(
             image_blocklisted: None,
         },
         gateway: gateway_info(config, request_id),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ML toxicity scoring helper
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "ml")]
-const ML_TOXIC_THRESHOLD: f64 = 0.65;
-#[cfg(feature = "ml")]
-const ML_SEVERE_THRESHOLD: f64 = 0.45;
-
-#[cfg(feature = "ml")]
-fn run_ml_toxicity(
-    classifier: Option<&ToxicityClassifier>,
-    text: Option<&str>,
-    _labels: &[String],
-) -> (Option<PolicyResult>, Option<ToxicityInfo>) {
-    let classifier = match classifier {
-        Some(c) => c,
-        None => return (None, None),
-    };
-
-    let input = match text {
-        Some(t) if !t.trim().is_empty() => t,
-        _ => return (None, None),
-    };
-
-    match classifier.classify(&input) {
-        Ok(scores) => {
-            let mut flags = Vec::new();
-            let mut blocked = Vec::new();
-            let mut worst = scores.toxic.max(scores.severe_toxic);
-
-            if scores.toxic >= ML_TOXIC_THRESHOLD {
-                flags.push(PolicyFlag::MlToxicityDetected);
-                blocked.push(format!("[ml] toxic={:.2}", scores.toxic));
-            }
-            if scores.severe_toxic >= ML_SEVERE_THRESHOLD {
-                if !flags.contains(&PolicyFlag::MlToxicityDetected) {
-                    flags.push(PolicyFlag::MlToxicityDetected);
-                }
-                blocked.push(format!("[ml] severe_toxic={:.2}", scores.severe_toxic));
-            }
-
-            let verdict = if !flags.is_empty() {
-                Verdict::Block
-            } else if worst >= 0.40 {
-                Verdict::Review
-            } else {
-                Verdict::Allow
-            };
-
-            if verdict == Verdict::Allow {
-                worst = 0.0;
-            }
-
-            let policy = PolicyResult {
-                verdict,
-                flags,
-                blocked_terms: blocked,
-                confidence: worst,
-                processing_ms: scores.inference_ms,
-            };
-
-            let info = ToxicityInfo {
-                toxic: scores.toxic,
-                severe_toxic: scores.severe_toxic,
-                inference_ms: scores.inference_ms,
-                model: "MiniLMv2-toxic-jigsaw".into(),
-            };
-
-            (Some(policy), Some(info))
-        }
-        Err(_) => (None, None),
     }
 }
 
@@ -423,7 +313,6 @@ pub fn image_blocklisted_response(
             blocked_terms: vec!["[image on blocklist]".into()],
             processing_ms: 0.0,
             safety_scores: None,
-            ml_toxicity: None,
         },
         classification: None,
         cache: CacheInfo {
@@ -454,7 +343,7 @@ mod tests {
             text: None,
             ml: true,
         };
-        let resp = moderate_policy_only(&req, &test_config(), "rid-1", None, None);
+        let resp = moderate_policy_only(&req, &test_config(), "rid-1", None);
         assert_eq!(resp.verdict, Verdict::Allow);
         assert!(resp.classification.is_some());
         assert!(!resp.cache.hit);
@@ -470,7 +359,7 @@ mod tests {
             text: None,
             ml: true,
         };
-        let resp = moderate_policy_only(&req, &test_config(), "rid-2", None, None);
+        let resp = moderate_policy_only(&req, &test_config(), "rid-2", None);
         assert_eq!(resp.verdict, Verdict::Block);
         assert!(!resp.moderation.policy_flags.is_empty());
     }
@@ -483,7 +372,7 @@ mod tests {
             text: None,
             ml: true,
         };
-        let resp = moderate_policy_only(&req, &test_config(), "rid-3", None, None);
+        let resp = moderate_policy_only(&req, &test_config(), "rid-3", None);
         assert_eq!(resp.verdict, Verdict::Block);
     }
 
