@@ -49,7 +49,7 @@ defined on the `ml-inference` branch.
 | Test | Script | What It Measures |
 |------|--------|-----------------|
 | **Warm Light** | `warm-light.js` | Minimal-work latency (`GET /gateway/health`) |
-| **Warm Policy** | `warm-policy.js` | Full 6-step rule pipeline with text, `ml: false` |
+| **Warm Policy** | `warm-policy.js` | Full 7-step rule pipeline with text, `ml: false` |
 | **Concurrency Ladder (rules)** | `concurrency-ladder.js` | Scaling 1→50 VUs, rules-only ladder |
 | **Cold Start (rules)** | `cold-start.js` | WASM instantiation, rules-only cold start |
 
@@ -198,7 +198,7 @@ benchmark; they are the reference lines on the scorecard.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| p50 latency | ≤ 30 ms | Full 6-step rule pipeline with text |
+| p50 latency | ≤ 30 ms | Full 7-step rule pipeline with text |
 | p95 latency | ≤ 100 ms | Includes regex PII and injection scan |
 | Error rate | ≤ 0.1% | Over full benchmark run |
 | Throughput | ≥ 100 RPS | At 10 concurrent connections |

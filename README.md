@@ -52,7 +52,7 @@ A Svelte SaaS-style dashboard with:
 - Suite runner, 7-run median calculator, scorecard generator, and multi-region runner
 - Automated reproduce pipeline: `make benchmark` (single region) or `make bench-multiregion` (3 regions)
 - Multi-region k6 infrastructure: automated provisioning of Linode VMs in us-ord, eu-central, ap-south
-- Measurement contract v3.1 with 9-scenario validation suite for correctness
+- Measurement contract v3.2 with 8-scenario validation suite for correctness
 
 ---
 

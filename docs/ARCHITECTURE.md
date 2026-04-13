@@ -350,7 +350,7 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
 | **Primary** | Warm Light | 10 | 60s | Health endpoint latency (GET) |
 | **Primary** | Warm Policy | 10 | 60s | Full rule pipeline |
 | **Primary** | Concurrency Ladder | 1→50 | 150s | Scaling under load, rules only |
-| **Primary** | Cold Start (rules) | 1 | ~20min | WASM instantiation (90s gaps) |
+| **Primary** | Cold Start (rules) | 1 | ~20min | WASM instantiation (120s gaps) |
 
 ### Statistical Method
 
@@ -358,7 +358,7 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
 - Percentiles captured: p50, p90, p95, avg, max
 - Jitter measured as p95/p50 ratio (lower = more consistent)
 - Server-side `processing_ms` isolated from round-trip (network-independent)
-- Cold start: 10 iterations with 90s pause between each to force instance spin-down
+- Cold start: 10 iterations with 120s pause between each to force instance spin-down
 
 ---
 
