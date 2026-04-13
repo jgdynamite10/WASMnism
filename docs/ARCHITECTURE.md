@@ -287,46 +287,59 @@ Client                    Edge PoP (Akamai only)        Compute Region
 
 ### Multi-Region Runner Topology
 
+Two runner origins are supported to control for backbone bias:
+
 ```
-                        ┌──────────────────────────────────┐
-                        │        Your Laptop (orchestrator)  │
-                        │                                    │
-                        │  make bench-multiregion            │
-                        │  PLATFORM=akamai URL=<url>         │
-                        └───────┬──────────┬─────────┬──────┘
-                                │          │         │
-                     SSH + sync │   SSH    │  SSH    │
-                                │          │         │
-                   ┌────────────▼──┐  ┌────▼────┐  ┌▼────────────┐
-                   │ k6-us-ord     │  │ k6-eu-  │  │ k6-ap-south │
-                   │ Chicago       │  │ central │  │ Singapore   │
-                   │ 172.234.28.*  │  │ Frankfurt│  │ 139.162.8.* │
-                   │               │  │ 139.162.*│  │             │
-                   │ Linode Nanode │  │ Linode  │  │ Linode      │
-                   │ $5/mo         │  │ Nanode  │  │ Nanode      │
-                   └───────┬───────┘  └────┬────┘  └──────┬──────┘
-                           │               │              │
-                     k6 → HTTPS      k6 → HTTPS    k6 → HTTPS
-                           │               │              │
-                           ▼               ▼              ▼
+                         ┌──────────────────────────────────┐
+                         │        Your Laptop (orchestrator) │
+                         │                                   │
+                         │  make bench-multiregion-gcp       │
+                         │  PLATFORM=akamai URL=<url>        │
+                         └───────┬──────────┬────────┬──────┘
+                                 │          │        │
+                      SSH + sync │   SSH    │  SSH   │
+                                 │          │        │
+      ┌──────────────────────────┼──────────┼────────┼──────────────────────┐
+      │ GCP (neutral origin)     │          │        │                      │
+      │                ┌─────────▼──┐  ┌────▼────┐  ┌▼────────────┐        │
+      │                │ us-central1 │  │ europe- │  │ asia-south- │        │
+      │                │ Iowa        │  │ west1   │  │ east1       │        │
+      │                │ e2-std-4    │  │ Belgium │  │ Singapore   │        │
+      │                │ 4cpu / 16GB │  │ e2-std-4│  │ e2-std-4    │        │
+      │                └──────┬──────┘  └────┬────┘  └──────┬──────┘        │
+      └───────────────────────┼──────────────┼──────────────┼───────────────┘
+                              │              │              │
+                        k6 → HTTPS     k6 → HTTPS    k6 → HTTPS
+                              │              │              │
+                              ▼              ▼              ▼
                    ┌──────────────────────────────────────────┐
-                   │         Target Platform                    │
-                   │  (Akamai / Fastly / Cloudflare Workers)    │
+                   │         Target Platform                   │
+                   │  (Akamai / Fastly / Cloudflare Workers)   │
                    └──────────────────────────────────────────┘
 ```
+
+**Why two origins?** Linode is owned by Akamai. Traffic from Linode to
+Akamai edge PoPs may use Akamai's private backbone, giving Akamai
+lower latency vs. Fastly/Cloudflare (whose traffic traverses the
+public internet). GCP is neutral — not owned by any CDN vendor.
+
+| Runner | Provider | Instance | Cost | Use Case |
+|--------|----------|----------|------|----------|
+| Linode (original) | Akamai Cloud | g6-nanode-1 (1 vCPU, 1 GB) | ~$5/mo | Base suite (≤50 VUs) |
+| GCP (neutral) | Google Cloud | e2-standard-4 (4 vCPU, 16 GB) | ~$0.13/hr | Extended suite (≤1,000 VUs per runner) |
 
 ### Automation Pipeline
 
 ```
-make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
+make bench-multiregion-gcp PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
     │
-    ├─ 1. deploy/k6-runner-setup.sh sync     Copy latest bench/ scripts to all 3 runners
+    ├─ 1. deploy/gcp-runner-setup.sh sync    Copy latest bench/ scripts to all 3 runners
     │
-    ├─ 2. bench/run-multiregion.sh           Launch reproduce.sh on each runner via SSH
-    │      │
-    │      ├─ [us-ord]     bench/reproduce.sh akamai <url> --cold --region us-ord
-    │      ├─ [eu-central] bench/reproduce.sh akamai <url> --cold --region eu-central
-    │      └─ [ap-south]   bench/reproduce.sh akamai <url> --cold --region ap-south
+    ├─ 2. bench/run-multiregion.sh --provider gcp
+    │      │                                  Launch reproduce.sh on each runner via SSH
+    │      ├─ [us-central]  bench/reproduce.sh akamai <url> --cold --region us-central
+    │      ├─ [eu-west]     bench/reproduce.sh akamai <url> --cold --region eu-west
+    │      └─ [ap-southeast] bench/reproduce.sh akamai <url> --cold --region ap-southeast
     │                │
     │                ├─ Step 0: Prerequisite check (curl, k6, python3)
     │                ├─ Step 1: Health check (GET /gateway/health → 200)
@@ -338,19 +351,25 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
     │                     └─ 10 iterations (rules cold start)
     │
     ├─ 3. Collect results from all runners via SCP
-    │      └─ results/<platform>/multiregion_<timestamp>/{us-ord,eu-central,ap-south}/
+    │      └─ results/<platform>/multiregion_<timestamp>/{us-central,eu-west,ap-southeast}/
     │
     └─ 4. Done. Results ready for scorecard generation.
+
+make bench-full-gcp PLATFORM=akamai URL=<url>    (extended suite: adds 1K ladder, soak, spike)
 ```
 
 ### Benchmark Suite Tests
 
-| Suite | Test | VUs | Duration | What It Measures |
-|-------|------|-----|----------|-----------------|
-| **Primary** | Warm Light | 10 | 60s | Health endpoint latency (GET) |
-| **Primary** | Warm Policy | 10 | 60s | Full rule pipeline |
-| **Primary** | Concurrency Ladder | 1→50 | 150s | Scaling under load, rules only |
-| **Primary** | Cold Start (rules) | 1 | ~20min | WASM instantiation (120s gaps) |
+| Suite | Test | Script | VUs | Duration | What It Measures |
+|-------|------|--------|-----|----------|-----------------|
+| **Primary** | Warm Light | `warm-light.js` | 10 | 60s | Health endpoint latency (GET) |
+| **Primary** | Warm Policy | `warm-policy.js` | 10 | 60s | Full rule pipeline |
+| **Primary** | Concurrency Ladder | `concurrency-ladder.js` | 1→50 | 150s | Scaling under load |
+| **Primary** | Sustained Peak | `constant-50vu.js` | 50 | 60s | Steady-state at 50 VUs |
+| **Primary** | Cold Start | `cold-start.js` | 1 | ~20min | WASM instantiation (120s gaps) |
+| **Extended** | Full Ladder | `concurrency-ladder-full.js` | 1→1,000 | 7min | Scaling to high concurrency |
+| **Extended** | Soak | `soak-500vu.js` | 500 | 10min | Stability under sustained load |
+| **Extended** | Spike | `spike-2000vu.js` | 0→2,000 | 80s | Breaking point under sudden load |
 
 ### Statistical Method
 
@@ -359,6 +378,7 @@ make bench-multiregion PLATFORM=akamai URL=<url> BENCH_FLAGS="--cold"
 - Jitter measured as p95/p50 ratio (lower = more consistent)
 - Server-side `processing_ms` isolated from round-trip (network-independent)
 - Cold start: 10 iterations with 120s pause between each to force instance spin-down
+- Extended suite: single run (not 7x) — high-VU tests are time-intensive
 
 ---
 

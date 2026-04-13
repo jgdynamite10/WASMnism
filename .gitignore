@@ -144,3 +144,4 @@ _archive/
 
 # k6 runner IPs (sensitive)
 deploy/runners.env
+deploy/gcp-runners.env

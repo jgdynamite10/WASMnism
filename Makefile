@@ -1,4 +1,4 @@
-.PHONY: prereqs build build-frontend deploy-akamai deploy-fastly deploy-workers test clean validate benchmark bench-multiregion scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down help
+.PHONY: prereqs build build-frontend deploy-akamai deploy-fastly deploy-workers test clean validate benchmark bench-multiregion bench-full scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down gcp-runners-up gcp-runners-status gcp-runners-sync gcp-runners-down help
 
 # Default gateway URL (override with URL=...)
 URL ?= https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
@@ -52,15 +52,27 @@ benchmark:
 bench-multiregion:
 	./bench/run-multiregion.sh $(PLATFORM) $(URL) $(BENCH_FLAGS)
 
+# Multi-region from GCP runners (neutral origin)
+bench-multiregion-gcp:
+	./bench/run-multiregion.sh $(PLATFORM) $(URL) --provider gcp $(BENCH_FLAGS)
+
+# ── Extended Benchmark (full suite: base + ladder-1000 + soak + spike) ──
+bench-full:
+	./bench/run-full-suite.sh $(PLATFORM) $(URL) $(BENCH_FLAGS)
+
+# Multi-region full suite from GCP runners
+bench-full-gcp:
+	./bench/run-multiregion.sh $(PLATFORM) $(URL) --provider gcp --full $(BENCH_FLAGS)
+
 # ── Scorecard ────────────────────────────────────────────────
 scorecard:
-	@if [ -z "$(A)" ] || [ -z "$(B)" ]; then \
-		echo "Usage: make scorecard A=results/akamai/<ts> B=results/<other>/<ts> [OUT=scorecard.md]"; \
+	@if [ -z "$(A)" ] || [ -z "$(B)" ] || [ -z "$(C)" ]; then \
+		echo "Usage: make scorecard A=results/akamai/<dir> B=results/fastly/<dir> C=results/workers/<dir> [OUT=scorecard.md]"; \
 		exit 1; \
 	fi
-	python3 bench/build-scorecard.py $(A) $(B) $(OUT)
+	python3 bench/build-scorecard.py $(A) $(B) $(C) $(if $(OUT),$(OUT))
 
-# ── k6 Runner Infrastructure ────────────────────────────────
+# ── k6 Runner Infrastructure (Linode) ───────────────────────
 runners-up:
 	./deploy/k6-runner-setup.sh provision
 
@@ -72,6 +84,19 @@ runners-sync:
 
 runners-down:
 	./deploy/k6-runner-setup.sh teardown
+
+# ── k6 Runner Infrastructure (GCP — neutral origin) ────────
+gcp-runners-up:
+	./deploy/gcp-runner-setup.sh provision
+
+gcp-runners-status:
+	./deploy/gcp-runner-setup.sh status
+
+gcp-runners-sync:
+	./deploy/gcp-runner-setup.sh sync
+
+gcp-runners-down:
+	./deploy/gcp-runner-setup.sh teardown
 
 # ── Report Generation ─────────────────────────────────────────
 report:
@@ -117,17 +142,24 @@ help:
 	@echo "Benchmark (single region):"
 	@echo "  make validate PLATFORM=akamai URL=<url>              Run 8-scenario validation"
 	@echo "  make benchmark PLATFORM=akamai URL=<url>             Full pipeline: validate → 7-run → medians"
-	@echo "  make benchmark PLATFORM=akamai URL=<url> BENCH_FLAGS='--cold'"
-	@echo "  (PLATFORM defaults to 'akamai'; set to 'fastly', 'workers', etc. for other platforms)"
+	@echo "  make benchmark ... BENCH_FLAGS='--cold'              Include cold start (~20 min extra)"
+	@echo "  make bench-full PLATFORM=akamai URL=<url>            Extended suite: base + 1K ladder + soak + spike"
 	@echo ""
-	@echo "Benchmark (multi-region):"
+	@echo "Benchmark (multi-region, Linode runners):"
 	@echo "  make runners-up                                      Provision 3 Linode k6 runners"
 	@echo "  make runners-sync                                    Copy latest scripts to runners"
-	@echo "  make bench-multiregion PLATFORM=akamai URL=<url>     Run from all 3 regions"
-	@echo "  make runners-down                                    Teardown runners"
+	@echo "  make bench-multiregion PLATFORM=akamai URL=<url>     Run from all 3 Linode regions"
+	@echo "  make runners-down                                    Teardown Linode runners"
+	@echo ""
+	@echo "Benchmark (multi-region, GCP runners — neutral origin):"
+	@echo "  make gcp-runners-up                                  Provision 3 GCP e2-standard-4 runners"
+	@echo "  make gcp-runners-sync                                Copy latest scripts to GCP runners"
+	@echo "  make bench-multiregion-gcp PLATFORM=akamai URL=<url> Run from all 3 GCP regions"
+	@echo "  make bench-full-gcp PLATFORM=akamai URL=<url>        Full suite from GCP (1K VUs, soak, spike)"
+	@echo "  make gcp-runners-down                                Teardown GCP runners"
 	@echo ""
 	@echo "Scorecard:"
-	@echo "  make scorecard A=<dir1> B=<dir2>     Compare two result sets"
+	@echo "  make scorecard A=<akamai_dir> B=<fastly_dir> C=<workers_dir> [OUT=file.md]"
 	@echo ""
 	@echo "Report (validate + generate):"
 	@echo "  make report PLATFORMS=\"akamai fastly workers\" NAME=\"scorecard_name\""

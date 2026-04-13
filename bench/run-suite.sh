@@ -74,7 +74,7 @@ TEST_NUM=$((TEST_NUM + 1))
 echo "=== Test ${TEST_NUM}: Concurrency Ladder (1→50 VUs, 150s) ==="
 k6 run \
     --env GATEWAY_URL="${GATEWAY_URL}" \
-    --summary-export="${RESULTS_DIR}/concurrency-rules.json" \
+    --summary-export="${RESULTS_DIR}/concurrency-ladder.json" \
     --quiet \
     "${SCRIPT_DIR}/concurrency-ladder.js"
 echo ""

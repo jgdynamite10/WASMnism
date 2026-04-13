@@ -50,9 +50,14 @@ sudo apt-get update && sudo apt-get install -y k6
 ### Multi-region tools (optional, for full reproduce)
 
 ```bash
-# Linode CLI
+# Linode CLI (Akamai-owned origin)
 pip install linode-cli
 linode-cli configure   # Provide your Linode API token
+
+# GCP CLI (neutral origin — recommended for unbiased results)
+# Install: https://cloud.google.com/sdk/docs/install
+gcloud auth login
+gcloud config set project <your-project-id>
 
 # SSH key (runners are provisioned with your ~/.ssh/id_ed25519.pub)
 ```
@@ -101,49 +106,80 @@ Results are saved to `results/<platform>/`.
 
 ## Full Reproduce (multi-region)
 
-### 1. Provision k6 runners
+### Option A: Linode Runners (Akamai-owned origin)
 
-This creates 3 Linode Nanodes ($5/mo each) in Chicago, Frankfurt, and Singapore:
-
-```bash
-make runners-up
-```
-
-This takes ~5 minutes. Runner IPs are saved to `deploy/runners.env` (gitignored).
-
-### 2. Verify runners
+> **Bias note:** Linode is owned by Akamai. Traffic to Akamai edge PoPs
+> may use Akamai's private backbone, giving Akamai a network advantage.
+> For unbiased results, use GCP runners (Option B) or run both.
 
 ```bash
+# 1. Provision 3 Linode Nanodes ($5/mo each) in Chicago, Frankfurt, Singapore
+make runners-up          # ~5 min; IPs saved to deploy/runners.env
+
+# 2. Verify
 make runners-status
-```
 
-### 3. Run multi-region benchmark
-
-```bash
-# From all 3 regions in parallel
+# 3. Run base suite from all 3 regions
 make bench-multiregion PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
 make bench-multiregion PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
 make bench-multiregion PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
-```
 
-This SSHs into each runner, executes the full reproduce pipeline, and
-collects results back to `results/<platform>/multiregion_<timestamp>/`.
-
-### 4. Teardown runners (when done)
-
-```bash
+# 4. Teardown
 make runners-down
 ```
 
+### Option B: GCP Runners (Neutral origin — recommended)
+
+GCP is not owned by any CDN vendor, eliminating backbone bias.
+Uses `e2-standard-4` (4 vCPU, 16 GB) in Iowa, Belgium, Singapore.
+
+```bash
+# 1. Provision 3 GCP instances (~$0.13/hr each)
+make gcp-runners-up      # ~5 min; IPs saved to deploy/gcp-runners.env
+
+# 2. Verify
+make gcp-runners-status
+
+# 3a. Base suite (same as Linode, but from neutral origin)
+make bench-multiregion-gcp PLATFORM=akamai  URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
+make bench-multiregion-gcp PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
+make bench-multiregion-gcp PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
+
+# 3b. Extended suite (full ladder to 1K VUs + soak + spike)
+make bench-full-gcp PLATFORM=akamai  URL=https://your-gateway.fwf.app
+make bench-full-gcp PLATFORM=fastly  URL=https://your-gateway.edgecompute.app
+make bench-full-gcp PLATFORM=workers URL=https://your-worker.your-subdomain.workers.dev
+
+# 4. Teardown
+make gcp-runners-down
+```
+
+### Running the Extended Suite Locally
+
+```bash
+# Full suite on a single machine (requires enough CPU/RAM for 1K VUs)
+make bench-full PLATFORM=akamai URL=https://your-gateway.fwf.app
+make bench-full PLATFORM=akamai URL=https://your-gateway.fwf.app BENCH_FLAGS="--cold"
+```
+
+### Time Estimates
+
+| Suite | Per platform | With cold start |
+|-------|-------------|-----------------|
+| Base (7-run reproduce) | ~40 min | ~60 min |
+| Full (base + extended) | ~32 min | ~52 min |
+| Extended only | ~20 min | ~40 min |
+
 ## Comparing Platforms
 
-Once you have results for two or more platforms:
+Once you have results for all three platforms:
 
 ```bash
 make scorecard \
-  A=results/akamai/multiregion_20260404/us-ord/7run \
-  B=results/fastly/multiregion_20260404/us-ord/7run \
-  OUT=results/scorecard_akamai_vs_fastly.md
+  A=results/akamai/multiregion_20260413/us-ord/7run \
+  B=results/fastly/multiregion_20260413/us-ord/7run \
+  C=results/workers/multiregion_20260413/us-ord/7run \
+  OUT=results/scorecard_3way.md
 ```
 
 ## Adding a New Platform
@@ -189,3 +225,6 @@ Cold start measures WASM module instantiation overhead for the rules-only pipeli
 - **k6 maxDuration**: Cold start tests need high `maxDuration` (10 iterations x 120s gaps). The script sets this dynamically.
 - **Paid tiers**: All platforms must use paid tiers for benchmark accuracy. See `.cursorrules` for tier details.
 - **Runner location matters**: Multi-region results isolate network latency. Single-region results from your laptop include your ISP latency.
+- **Origin bias**: Linode is Akamai-owned. For unbiased results, run from GCP or run from both and compare. See `docs/benchmark_contract.md` §7.3.2.
+- **High VU runner sizing**: The extended suite (1,000 VUs, soak, spike) requires ≥4 vCPU / 16 GB runners. Linode Nanodes (1 vCPU) cannot run the extended suite — use GCP `e2-standard-4` instances.
+- **Spike distribution**: For 2,000+ VU spike tests, the load is distributed across 3 runners (~667 VUs each). A single runner above ~1,000 VUs may bottleneck on the runner itself rather than the gateway.

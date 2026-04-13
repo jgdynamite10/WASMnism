@@ -47,12 +47,13 @@ A Svelte SaaS-style dashboard with:
 
 ### Benchmark Infrastructure
 
-- **Primary suite**: pipeline benchmarks — warm light, warm policy, concurrency ladder
-- Cold start tests
-- Suite runner, 7-run median calculator, scorecard generator, and multi-region runner
+- **Primary suite**: warm light, warm policy, concurrency ladder (1→50 VUs), sustained 50 VU, cold start
+- **Extended suite**: full ladder (1→1,000 VUs), soak (500 VUs / 10 min), spike (0→2,000 VUs)
+- Suite runner, 7-run median calculator, scorecard generator, and multi-region orchestrator
 - Automated reproduce pipeline: `make benchmark` (single region) or `make bench-multiregion` (3 regions)
-- Multi-region k6 infrastructure: automated provisioning of Linode VMs in us-ord, eu-central, ap-south
-- Measurement contract v3.2 with 8-scenario validation suite for correctness
+- **Dual-origin runners**: Linode (Akamai-owned) and GCP (neutral) for bias-controlled comparisons
+- Multi-region k6 infrastructure: Linode Nanodes or GCP e2-standard-4 in US, EU, and APAC
+- Measurement contract v3.3 with 8-scenario validation suite for correctness
 
 ---
 
@@ -95,6 +96,7 @@ WASMnism/
 │   └── run-7x.sh           #   7-run median calculator
 ├── deploy/                 # Deployment + infrastructure
 │   ├── k6-runner-setup.sh  #   Provision/teardown 3 Linode k6 runners
+│   ├── gcp-runner-setup.sh #   Provision/teardown 3 GCP k6 runners (neutral origin)
 │   └── runners.env         #   Runner IPs (gitignored)
 ├── cost/                   # Cost model per 1M requests
 ├── docs/                   # Benchmark contract, moderation guide, reproduce guide
@@ -183,16 +185,22 @@ Returns gateway status, platform, and region.
 
 ## Benchmark
 
-See the full [measurement contract](docs/benchmark_contract.md) (v3.2) for schemas, SLOs, and fairness rules.
+See the full [measurement contract](docs/benchmark_contract.md) (v3.3) for schemas, SLOs, and fairness rules.
 
 ### Running Benchmarks
 
 ```bash
-# Single platform (~40 min)
+# Single platform, base suite (~40 min)
 make benchmark PLATFORM=akamai URL=<endpoint-url>
 
-# Multi-region (from 3 k6 runners, ~90 min)
+# Multi-region from Linode runners (~90 min per platform)
 make bench-multiregion PLATFORM=fastly URL=<endpoint-url>
+
+# Multi-region from GCP runners — neutral origin, recommended (~90 min per platform)
+make bench-multiregion-gcp PLATFORM=akamai URL=<endpoint-url>
+
+# Extended suite: 1K ladder + soak + spike (~32 min per platform)
+make bench-full-gcp PLATFORM=akamai URL=<endpoint-url>
 ```
 
 See [docs/REPRODUCE.md](docs/REPRODUCE.md) for the full reproduction guide.

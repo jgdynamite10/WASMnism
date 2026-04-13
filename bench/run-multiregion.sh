@@ -5,27 +5,56 @@ set -euo pipefail
 # Collects results back to local machine.
 #
 # Usage:
-#   ./bench/run-multiregion.sh <platform> <gateway-url> [--ml] [--cold]
+#   ./bench/run-multiregion.sh <platform> <gateway-url> [OPTIONS]
+#
+# Options:
+#   --provider linode|gcp   Select runner infrastructure (default: linode)
+#   --full                  Run the extended full suite instead of reproduce pipeline
+#   --cold                  Include cold start tests
+#   --spike-vus N           Override spike VU target for full suite (default: 667)
 #
 # Prerequisites:
-#   - deploy/runners.env exists (created by deploy/k6-runner-setup.sh provision)
-#   - Scripts synced to runners (deploy/k6-runner-setup.sh sync)
+#   - deploy/runners.env or deploy/gcp-runners.env exists
+#   - Scripts synced to runners
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-RUNNERS_FILE="${REPO_ROOT}/deploy/runners.env"
-PLATFORM="${1:?Usage: $0 <platform> <gateway-url> [--ml] [--cold]}"
-GATEWAY_URL="${2:?Usage: $0 <platform> <gateway-url> [--ml] [--cold]}"
+PLATFORM="${1:?Usage: $0 <platform> <gateway-url> [--provider linode|gcp] [--full] [--cold]}"
+GATEWAY_URL="${2:?Usage: $0 <platform> <gateway-url> [--provider linode|gcp] [--full] [--cold]}"
 
+PROVIDER="linode"
+RUN_FULL=false
 EXTRA_FLAGS=""
+SSH_USER="root"
+
 shift 2
-for arg in "$@"; do
-    EXTRA_FLAGS="${EXTRA_FLAGS} ${arg}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --provider)  PROVIDER="$2"; shift ;;
+        --full)      RUN_FULL=true ;;
+        *)           EXTRA_FLAGS="${EXTRA_FLAGS} ${1}" ;;
+    esac
+    shift
 done
 
+case "$PROVIDER" in
+    linode)
+        RUNNERS_FILE="${REPO_ROOT}/deploy/runners.env"
+        SSH_USER="root"
+        ;;
+    gcp)
+        RUNNERS_FILE="${REPO_ROOT}/deploy/gcp-runners.env"
+        SSH_USER="${GCP_SSH_USER:-$(whoami)}"
+        ;;
+    *)
+        echo "ERROR: Unknown provider '${PROVIDER}'. Use 'linode' or 'gcp'."
+        exit 1
+        ;;
+esac
+
 if [ ! -f "${RUNNERS_FILE}" ]; then
-    echo "ERROR: No runners.env found at ${RUNNERS_FILE}"
-    echo "Run: ./deploy/k6-runner-setup.sh provision"
+    echo "ERROR: No runners file at ${RUNNERS_FILE}"
+    echo "Run: ./deploy/${PROVIDER/linode/k6}-runner-setup.sh provision"
     exit 1
 fi
 
@@ -33,10 +62,14 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="${REPO_ROOT}/results/${PLATFORM}/multiregion_${TIMESTAMP}"
 mkdir -p "${RESULTS_DIR}"
 
+SUITE_LABEL=$( $RUN_FULL && echo "Full Suite" || echo "Reproduce Pipeline" )
+
 echo "============================================"
 echo "  WASMnism Multi-Region Benchmark"
 echo "  Platform: ${PLATFORM}"
 echo "  Gateway:  ${GATEWAY_URL}"
+echo "  Provider: ${PROVIDER}"
+echo "  Suite:    ${SUITE_LABEL}"
 echo "  Flags:    ${EXTRA_FLAGS}"
 echo "  Results:  ${RESULTS_DIR}"
 echo "  Date:     $(date)"
@@ -72,8 +105,14 @@ for i in "${!RUNNER_LABELS[@]}"; do
 
     echo "=== Launching on ${label} (${ip}, region=${region}) ==="
 
-    ssh -o StrictHostKeyChecking=no "root@${ip}" \
-        "cd /opt/bench && ./reproduce.sh ${PLATFORM} ${GATEWAY_URL} --region ${region} ${EXTRA_FLAGS}" \
+    if $RUN_FULL; then
+        REMOTE_CMD="cd /opt/bench && ./run-full-suite.sh ${PLATFORM} ${GATEWAY_URL} ${EXTRA_FLAGS}"
+    else
+        REMOTE_CMD="cd /opt/bench && ./reproduce.sh ${PLATFORM} ${GATEWAY_URL} --region ${region} ${EXTRA_FLAGS}"
+    fi
+
+    ssh -o StrictHostKeyChecking=no "${SSH_USER}@${ip}" \
+        "${REMOTE_CMD}" \
         > "${log}" 2>&1 &
 
     PIDS+=($!)
@@ -82,7 +121,11 @@ done
 
 echo ""
 echo "=== Waiting for all runners to complete ==="
-echo "  (This takes ~60 min with --ml --cold, ~40 min without --cold)"
+if $RUN_FULL; then
+    echo "  (Full suite: ~32 min, +20 min with --cold)"
+else
+    echo "  (Reproduce: ~40 min, +20 min with --cold)"
+fi
 echo ""
 
 FAILED=0
@@ -113,19 +156,23 @@ for i in "${!RUNNER_LABELS[@]}"; do
 
     echo "  Collecting from ${label} (${ip})..."
 
-    # Copy the latest 7run directory
-    REMOTE_LATEST=$(ssh -o StrictHostKeyChecking=no "root@${ip}" \
-        "ls -td /opt/results/${PLATFORM}/7run_* 2>/dev/null | head -1" || true)
-
-    if [ -n "${REMOTE_LATEST}" ]; then
-        scp -o StrictHostKeyChecking=no -r "root@${ip}:${REMOTE_LATEST}" "${region_dir}/7run/" 2>/dev/null || true
+    if $RUN_FULL; then
+        # Full suite: collect the latest full_* directory
+        REMOTE_FULL=$(ssh -o StrictHostKeyChecking=no "${SSH_USER}@${ip}" \
+            "ls -td /opt/results/${PLATFORM}/full_* 2>/dev/null | head -1" || true)
+        if [ -n "${REMOTE_FULL}" ]; then
+            scp -o StrictHostKeyChecking=no -r "${SSH_USER}@${ip}:${REMOTE_FULL}" "${region_dir}/full/" 2>/dev/null || true
+        fi
+    else
+        # Reproduce pipeline: collect 7run + medians + cold
+        REMOTE_LATEST=$(ssh -o StrictHostKeyChecking=no "${SSH_USER}@${ip}" \
+            "ls -td /opt/results/${PLATFORM}/7run_* 2>/dev/null | head -1" || true)
+        if [ -n "${REMOTE_LATEST}" ]; then
+            scp -o StrictHostKeyChecking=no -r "${SSH_USER}@${ip}:${REMOTE_LATEST}" "${region_dir}/7run/" 2>/dev/null || true
+        fi
+        scp -o StrictHostKeyChecking=no "${SSH_USER}@${ip}:/opt/results/${PLATFORM}/medians_${region}_"*.md "${region_dir}/" 2>/dev/null || true
+        scp -o StrictHostKeyChecking=no "${SSH_USER}@${ip}:/opt/results/${PLATFORM}/cold_start/"*"_${region}.json" "${region_dir}/" 2>/dev/null || true
     fi
-
-    # Copy medians
-    scp -o StrictHostKeyChecking=no "root@${ip}:/opt/results/${PLATFORM}/medians_${region}_"*.md "${region_dir}/" 2>/dev/null || true
-
-    # Copy cold start results if they exist
-    scp -o StrictHostKeyChecking=no "root@${ip}:/opt/results/${PLATFORM}/cold_start/"*"_${region}.json" "${region_dir}/" 2>/dev/null || true
 done
 
 echo ""

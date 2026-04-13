@@ -1,7 +1,7 @@
 # WASMnism Benchmark Contract
 
-**Version:** 3.2  
-**Date:** April 12, 2026  
+**Version:** 3.3  
+**Date:** April 13, 2026  
 **Status:** Active
 
 ---
@@ -51,7 +51,20 @@ defined on the `ml-inference` branch.
 | **Warm Light** | `warm-light.js` | Minimal-work latency (`GET /gateway/health`) |
 | **Warm Policy** | `warm-policy.js` | Full 7-step rule pipeline with text, `ml: false` |
 | **Concurrency Ladder (rules)** | `concurrency-ladder.js` | Scaling 1→50 VUs, rules-only ladder |
+| **Sustained Peak** | `constant-50vu.js` | 50 VUs constant for 60s |
 | **Cold Start (rules)** | `cold-start.js` | WASM instantiation, rules-only cold start |
+
+### Extended Suite — High Concurrency & Stress
+
+| Test | Script | What It Measures |
+|------|--------|-----------------|
+| **Full Concurrency Ladder** | `concurrency-ladder-full.js` | Scaling 1→1,000 VUs (60s per step, 7 min total) |
+| **Soak** | `soak-500vu.js` | 500 VUs sustained for 10 min; reveals GC, leaks, throttling |
+| **Spike** | `spike-2000vu.js` | Ramp 0→2,000 in 10s, hold 60s; finds breaking point |
+
+The extended suite requires runners with ≥4 vCPU / 16 GB (e.g., GCP
+`e2-standard-4`). For spike tests above 1,000 VUs, distribute load
+across multiple runners (each handles `SPIKE_VUS / N` where N = runner count).
 
 ---
 
@@ -210,6 +223,31 @@ benchmark; they are the reference lines on the scorecard.
 | Error rate | ≤ 5% | At peak 50 VUs, rules only |
 | Latency degradation | ≤ 3x baseline | p50 at 50 VUs vs p50 at 1 VU |
 
+### 6.1.5 Extended Suite SLOs
+
+**Full Concurrency Ladder (1→1,000 VUs)**
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Error rate at 500 VUs | ≤ 5% | Platform should handle 500 concurrent without failures |
+| Error rate at 1,000 VUs | ≤ 10% | Some degradation acceptable at extreme concurrency |
+| Latency degradation | ≤ 5x baseline | p50 at 1,000 VUs vs p50 at 1 VU |
+
+**Soak (500 VUs, 10 min)**
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Error rate | ≤ 5% | Sustained load must remain stable |
+| p95 latency | ≤ 2,000 ms | No runaway latency growth over time |
+| Latency drift | ≤ 20% | p50 in last minute vs first minute |
+
+**Spike (0→2,000 VUs)**
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Error rate | ≤ 20% | High concurrency; some rejection expected |
+| Recovery time | ≤ 10s | After ramp-down, latency returns to baseline |
+
 ### 6.2 Measurement Method
 
 - **Timing source:** Client-side (k6 `http_req_duration`). This is the
@@ -256,17 +294,52 @@ The `concurrency-ladder.js` test uses this progression:
 **Total:** 150 seconds. No explicit warm-up stage — the suite runner
 sends a warm-up request before starting any test.
 
+The extended `concurrency-ladder-full.js` uses this progression:
+
+| Stage | Duration | Virtual Users (VUs) |
+|-------|----------|---------------------|
+| Hold 1 | 60 s | 1 |
+| Hold 2 | 60 s | 10 |
+| Hold 3 | 60 s | 50 |
+| Hold 4 | 60 s | 100 |
+| Hold 5 | 60 s | 250 |
+| Hold 6 | 60 s | 500 |
+| Hold 7 | 60 s | 1,000 |
+
+**Total:** 420 seconds (7 minutes).
+
 ### 7.3 Multi-Region Testing
 
-Tests are run from **3 geographic locations** to capture regional variance:
+Tests are run from **3 geographic locations** to capture regional variance.
 
-| Region | Runner Location | Purpose |
-|--------|----------------|---------|
-| US Central | Linode us-ord (Chicago) | Baseline region |
-| Europe | Linode eu-west (London) | Transatlantic latency |
-| Asia-Pacific | Linode ap-south (Singapore) | Maximum distance |
+#### 7.3.1 Runner Origins
+
+Two runner infrastructures are available. Using both eliminates
+backbone bias (see §7.3.2):
+
+| Region | Linode (Akamai-owned) | GCP (Neutral) |
+|--------|----------------------|----------------|
+| US Central | us-ord (Chicago) | us-central1 (Iowa) |
+| Europe | eu-central (Frankfurt) | europe-west1 (Belgium) |
+| Asia-Pacific | ap-south (Singapore) | asia-southeast1 (Singapore) |
 
 Each region runs the full benchmark suite independently.
+
+#### 7.3.2 Origin Bias Disclosure
+
+Linode is owned by Akamai. Traffic from Linode DCs to Akamai edge
+PoPs may traverse Akamai's private backbone, giving Akamai lower
+network latency and less jitter than competitors whose traffic must
+cross the public internet.
+
+To control for this bias, the benchmark SHOULD be run from both
+Linode and GCP origins. If results are materially similar, backbone
+bias is negligible. If Akamai's numbers improve significantly from
+Linode vs. GCP, the GCP results are the primary scorecard and Linode
+results are disclosed as a supplementary "Akamai-hosted origin"
+perspective.
+
+The scorecard MUST disclose which runner origin produced the data.
 
 ### 7.4 Cold Start Protocol
 
@@ -293,7 +366,8 @@ The `--cold` flag on `run-suite.sh` runs the cold start test.
 ### 7.6 Result Integrity
 
 - Raw k6 JSON output is saved to `results/<platform>/<timestamp>/`.
-- Primary suite files: `warm-light.json`, `warm-policy.json`, `concurrency-rules.json`.
+- Primary suite files: `warm-light.json`, `warm-policy.json`, `concurrency-ladder.json`, `constant-50vu.json`.
+- Extended suite files: `concurrency-ladder-full.json`, `soak-500vu.json`, `spike.json`.
 - Cold start files: `cold-start-rules.json`.
 - Raw results are **gitignored** (may contain IPs/hostnames).
 - Scorecards are generated by `bench/build-scorecard.py` and also gitignored.
@@ -379,3 +453,4 @@ All three platforms must produce 8/8 pass before performance benchmarks are run.
 | 3.0 | 2026-03-26 | Embedded ML toxicity classifier; 5-test benchmark suite (cold start, warm light, warm heavy, concurrency ladder, consistency); removed external inference proxy; updated SLOs for ML workload |
 | 3.1 | 2026-03-26 | Two-tier benchmark: primary (rules, `ml: false`) and stretch (ML). Added `ml` request field, `warm-policy.js`, rules-only cold start. Updated SLOs and scorecard format. |
 | 3.2 | 2026-04-12 | Tier 1 (rules-only) contract: removed ML/stretch content; response headers moved to §4; validation is 8 scenarios; `ml` defaults `false`; ML contract and benchmarks on `ml-inference` branch. |
+| 3.3 | 2026-04-13 | Extended suite (1K ladder, 500-VU soak, 2K spike); GCP neutral-origin runners; dual-origin bias methodology; fixed `concurrency-rules` → `concurrency-ladder` naming. |
