@@ -3,7 +3,7 @@ spin_manifest_version = 2
 [application]
 name = "wasm-prompt-firewall"
 version = "1.0.0"
-description = "AI Prompt Firewall — WASM-Powered Content Moderation at the Edge"
+description = "WASM-Powered Content Moderation Gateway at the Edge"
 
 [variables]
 inference_url = { default = "" }

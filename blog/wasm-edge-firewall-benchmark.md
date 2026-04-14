@@ -1,4 +1,4 @@
-# I Benchmarked an AI Prompt Firewall Across Three WASM Edge Platforms. Here's What I Found.
+# I Benchmarked a WASM Content Moderation Gateway Across Three Edge Platforms. Here's What I Found.
 
 *Akamai Functions vs Fastly Compute vs Cloudflare Workers — a decision-grade price-per-performance comparison, April 2026*
 
@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-I wrote an AI prompt firewall in Rust, compiled it to WebAssembly, and deployed identical binaries across three edge platforms: **Akamai Functions**, **Fastly Compute**, and **Cloudflare Workers**. Then I hammered all three from two independent cloud origins, across three continents, at concurrency levels from 1 to 2,000 simultaneous users.
+I wrote a content moderation gateway in Rust, compiled it to WebAssembly, and deployed identical binaries across three edge platforms: **Akamai Functions**, **Fastly Compute**, and **Cloudflare Workers**. Then I hammered all three from two independent cloud origins, across three continents, at concurrency levels from 1 to 2,000 simultaneous users.
 
 The results surprised me:
 

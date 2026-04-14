@@ -1,6 +1,6 @@
-# WASMnism: AI Prompt Firewall — Edge Moderation Benchmark
+# WASMnism: WASM-Powered Content Moderation — Edge Benchmark
 
-You are building a portable AI Prompt Firewall deployed as WebAssembly across WASM-first edge platforms, producing a decision-grade price-per-performance scorecard for a blog post.
+You are building a portable WASM-powered content moderation gateway deployed as WebAssembly across WASM-first edge platforms, producing a decision-grade price-per-performance scorecard for a blog post.
 
 ## Two-Branch Strategy
 

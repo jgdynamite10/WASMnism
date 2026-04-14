@@ -1,11 +1,11 @@
-# AI Prompt Firewall — Moderation Architecture Guide
+# Content Moderation Gateway — Architecture Guide
 
-> Replication reference for implementing the WASM prompt firewall across all
+> Replication reference for implementing the WASM content moderation gateway across all
 > target platforms (Akamai Functions, Fastly Compute, Cloudflare Workers).
 
 ## Concept
 
-The AI Prompt Firewall is a WASM-based content moderation gateway that sits at
+The content moderation gateway is a WASM-based system that sits at
 the edge between users and any downstream AI service. It evaluates every text
 prompt through a multi-layer policy engine before the request reaches the AI
 model.
@@ -15,7 +15,7 @@ the edge evaluates it for prohibited content, PII, injection attacks, and
 evasion attempts — the rule-based pipeline completes in single-digit milliseconds.
 
 ```
-User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
+User prompt → [WASM Content Moderation at Edge] → Any AI Service
                           │
                           ├─ Unicode normalization
                           ├─ SHA-256 content hashing
@@ -26,7 +26,7 @@ User prompt → [WASM Prompt Firewall at Edge] → Any AI Service
                           └─ Policy verdict (allow / review / block)
 ```
 
-The benchmark question: *How much latency does a WASM prompt firewall add at
+The benchmark question: *How much latency does a WASM content moderation gateway add at
 the edge?* This gateway runs identically on Akamai, Fastly, Cloudflare, and
 the scorecard compares overhead across all three.
 

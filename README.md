@@ -2,7 +2,7 @@
 
 **WASM-Powered Content Moderation at the Edge**
 
-A portable AI Prompt Firewall deployed as WebAssembly across three WASM-first edge platforms. Built to compare edge compute providers for a real-world workload.
+A portable WASM-powered content moderation gateway deployed as WebAssembly across three WASM-first edge platforms. Built to compare edge compute providers for a real-world workload.
 
 > **Status**: All three Tier 1 platforms are live and deployed.
 

@@ -1,6 +1,6 @@
 # WASMnism Architecture
 
-Comprehensive architecture reference for the WASM-powered AI Prompt Firewall,
+Comprehensive architecture reference for the WASM-powered content moderation gateway,
 covering system design, deployment topology, and benchmark infrastructure.
 
 ---

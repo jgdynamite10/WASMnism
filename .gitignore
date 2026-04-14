@@ -1,4 +1,4 @@
-# --- WASMnism: AI Prompt Firewall — Edge Moderation Benchmark ---
+# --- WASMnism: WASM-Powered Content Moderation — Edge Benchmark ---
 # Security-first: never commit secrets, credentials, or environment-specific data.
 
 .DS_Store
