@@ -19,6 +19,9 @@ RUNNERS_FILE="${SCRIPT_DIR}/runners.env"
 TAG="wasmnism-k6"
 SSH_KEY="${HOME}/.ssh/id_ed25519"
 
+# g6-dedicated-4: 4 dedicated vCPU, 8 GB — required for high-VU tests.
+# g6-nanode-1 (1 shared vCPU) bottlenecks k6 before the platform, masking results.
+# Override: LINODE_TYPE=g6-nanode-1 ./deploy/k6-runner-setup.sh provision
 REGIONS=("us-ord" "eu-central" "ap-south")
 LABELS=("k6-us-ord" "k6-eu-central" "k6-ap-south")
 
@@ -79,7 +82,7 @@ curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor -o /usr/share/keyrings/k6.gp
 echo 'deb [signed-by=/usr/share/keyrings/k6.gpg] https://dl.k6.io/deb stable main' > /etc/apt/sources.list.d/k6.list
 apt-get update -qq
 apt-get install -y -qq k6
-mkdir -p /opt/bench/fixtures
+mkdir -p /opt/bench/fixtures /opt/results
 k6 version
 echo "k6 install complete"
 INSTALL
@@ -112,7 +115,7 @@ cmd_provision() {
         echo "--- Creating ${label} in ${region} ---"
         local result
         result=$(linode-cli linodes create \
-            --type g6-nanode-1 \
+            --type "${LINODE_TYPE:-g6-dedicated-4}" \
             --region "${region}" \
             --image linode/ubuntu24.04 \
             --root_pass "$(openssl rand -base64 24)" \

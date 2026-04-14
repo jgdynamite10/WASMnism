@@ -122,7 +122,8 @@ edge-gateway/adapters/fastly/static/
 edge-gateway/adapters/lambda/static/
 edge-gateway/adapters/lambda/models/
 
-# --- Workers build artifacts ---
+# --- Workers / Wrangler build artifacts ---
+.wrangler/
 edge-gateway/adapters/workers/static/
 edge-gateway/adapters/workers/.wrangler/
 

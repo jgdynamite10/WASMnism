@@ -3,9 +3,10 @@
 
 Usage:
     python3 bench/generate-charts.py --out results/charts/
+    python3 bench/generate-charts.py --out results/charts-gcp/ --origin gcp
 
-Reads hardcoded benchmark data (cross-region medians or per-region values)
-and produces SVG files + a combined base64 snippet file for HTML injection.
+Reads benchmark data for the specified origin (linode or gcp) and produces
+SVG files + a combined base64 snippet file for HTML injection.
 """
 import argparse
 import base64
@@ -28,6 +29,73 @@ MUTED_COLOR = "#6b7280"
 PLATFORMS = ["Akamai", "Fastly", "Workers"]
 COLORS = [AKAMAI_COLOR, FASTLY_COLOR, WORKERS_COLOR]
 
+# --- Per-origin benchmark data ---
+
+DATA = {
+    "linode": {
+        "region_label": "Chicago",
+        "exec_summary": {
+            "akamai": [6.2, 8.8, 10.1],
+            "fastly": [2.4, 6.1, 6.8],
+            "workers": [6.0, 5.8, 7.2],
+        },
+        "cold_start": {
+            "regions": ["Singapore", "Frankfurt", "Chicago"],
+            "akamai": [48.4, 132.3, 45.2],
+            "fastly": [4.9, 7.1, 6.6],
+            "workers": [11.9, 11.5, 10.4],
+        },
+        "concurrency": {
+            "x_pos": [10, 25, 300, 500, 2000],
+            "x_labels": ["10", "25", "300", "500", "2,000"],
+            "akamai": [8.8, 10.1, 33.2, 52.4, 66.2],
+            "fastly": [6.1, 6.8, 46.4, 114.9, 150.7],
+            "workers": [5.8, 6.6, 33.7, 58.2, 80.5],
+            "crossover_low_color": WORKERS_COLOR,
+            "crossover_high_color": AKAMAI_COLOR,
+            "crossover_low_label": "Workers\nleads",
+            "crossover_high_label": "Akamai leads",
+            "crossover_x": 60,
+        },
+        "throughput": {
+            "akamai": [2132, 3029, 2824],
+            "fastly": [1579, 1918, 1834],
+            "workers": [2153, 2856, 2663],
+        },
+    },
+    "gcp": {
+        "region_label": "Cross-region",
+        "exec_summary": {
+            "akamai": [9.0, 11.5, 11.9],
+            "fastly": [3.1, 7.0, 7.2],
+            "workers": [10.4, 11.0, 10.7],
+        },
+        "cold_start": {
+            "regions": ["Singapore", "Belgium", "N. Virginia"],
+            "akamai": [144.2, 65.6, 90.9],
+            "fastly": [5.8, 7.6, 10.8],
+            "workers": [8.8, 10.5, 21.6],
+        },
+        "concurrency": {
+            "x_pos": [10, 25, 300, 500, 2000],
+            "x_labels": ["10", "25", "300", "500", "2,000"],
+            "akamai": [11.5, 11.9, 40.8, 85.4, 91.6],
+            "fastly": [7.0, 7.2, 34.4, 60.2, 69.7],
+            "workers": [11.0, 10.7, 38.0, 163.2, 193.3],
+            "crossover_low_color": FASTLY_COLOR,
+            "crossover_high_color": FASTLY_COLOR,
+            "crossover_low_label": "Fastly\nleads",
+            "crossover_high_label": "Fastly leads",
+            "crossover_x": 60,
+        },
+        "throughput": {
+            "akamai": [2859, 4690, 4638],
+            "fastly": [3198, 4967, 4494],
+            "workers": [854, 1196, 1067],
+        },
+    },
+}
+
 
 def style_ax(ax, title, ylabel, xlabel=None):
     ax.set_title(title, fontsize=13, fontweight="600", color=TEXT_COLOR, pad=12)
@@ -44,12 +112,12 @@ def style_ax(ax, title, ylabel, xlabel=None):
     ax.set_facecolor(BG_COLOR)
 
 
-def chart_executive_summary(outdir):
+def chart_executive_summary(outdir, origin):
     """Grouped bar: p50 latency across base suite tests (cross-region medians)."""
+    d = DATA[origin]["exec_summary"]
+    region = DATA[origin]["region_label"]
     tests = ["Warm Light\n(10 VUs)", "Warm Policy\n(10 VUs)", "Concurrency\nLadder (1-50)"]
-    akamai = [6.2, 8.8, 10.1]
-    fastly = [2.4, 6.1, 6.8]
-    workers = [6.0, 5.8, 7.2]
+    akamai, fastly, workers = d["akamai"], d["fastly"], d["workers"]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     x = range(len(tests))
@@ -66,7 +134,7 @@ def chart_executive_summary(outdir):
 
     ax.set_xticks(x)
     ax.set_xticklabels(tests)
-    style_ax(ax, "Base Suite — Median Latency (p50)", "Latency (ms)")
+    style_ax(ax, f"Base Suite — Median Latency (p50, {region})", "Latency (ms)")
     ax.legend(frameon=False, fontsize=9, loc="upper right")
     ax.set_ylim(0, max(max(akamai), max(fastly), max(workers)) * 1.25)
     fig.tight_layout()
@@ -76,15 +144,12 @@ def chart_executive_summary(outdir):
     return path
 
 
-def chart_concurrency_scaling(outdir):
+def chart_concurrency_scaling(outdir, origin):
     """Line chart: p50 latency vs VU count showing the crossover point."""
-    vus =     [10,   25,    500,   500,   2000]
-    labels =  ["Policy\n10 VU", "Ladder\n1-50", "Ladder\n1-1K", "Soak\n500 VU", "Spike\n2K VU"]
-    x_pos =   [10,   25,    300,   500,   2000]
-
-    akamai =  [8.8,  10.1,  33.2,  52.4,  66.2]
-    fastly =  [6.1,  6.8,   46.4,  114.9, 150.7]
-    workers = [5.8,  6.6,   33.7,  58.2,  80.5]
+    d = DATA[origin]["concurrency"]
+    region = DATA[origin]["region_label"]
+    x_pos = d["x_pos"]
+    akamai, fastly, workers = d["akamai"], d["fastly"], d["workers"]
 
     fig, ax = plt.subplots(figsize=(9, 5))
 
@@ -92,28 +157,32 @@ def chart_concurrency_scaling(outdir):
     ax.plot(x_pos, fastly, "s-", color=FASTLY_COLOR, linewidth=2.5, markersize=7, label="Fastly", zorder=4)
     ax.plot(x_pos, workers, "^-", color=WORKERS_COLOR, linewidth=2.5, markersize=7, label="Workers", zorder=4)
 
-    for i, (a, f, w) in enumerate(zip(akamai, fastly, workers)):
+    y_max = max(max(akamai), max(fastly), max(workers)) * 1.15
+    for i, (a, f, w_val) in enumerate(zip(akamai, fastly, workers)):
         xp = x_pos[i]
         offset = 4
         ax.annotate(f"{a:.0f}", (xp, a), textcoords="offset points", xytext=(0, offset),
                     fontsize=7.5, color=AKAMAI_COLOR, ha="center", fontweight="600")
         ax.annotate(f"{f:.0f}", (xp, f), textcoords="offset points", xytext=(0, offset),
                     fontsize=7.5, color=FASTLY_COLOR, ha="center", fontweight="600")
-        ax.annotate(f"{w:.0f}", (xp, w), textcoords="offset points", xytext=(0, -12),
+        ax.annotate(f"{w_val:.0f}", (xp, w_val), textcoords="offset points", xytext=(0, -12),
                     fontsize=7.5, color=WORKERS_COLOR, ha="center", fontweight="600")
 
-    ax.axvspan(0, 60, alpha=0.04, color=WORKERS_COLOR, zorder=1)
-    ax.axvspan(60, 2200, alpha=0.04, color=AKAMAI_COLOR, zorder=1)
-    ax.text(30, 145, "Workers\nleads", fontsize=8, color=WORKERS_COLOR, ha="center", alpha=0.7, fontstyle="italic")
-    ax.text(800, 145, "Akamai leads", fontsize=8, color=AKAMAI_COLOR, ha="center", alpha=0.7, fontstyle="italic")
+    cx = d["crossover_x"]
+    ax.axvspan(0, cx, alpha=0.04, color=d["crossover_low_color"], zorder=1)
+    ax.axvspan(cx, 2200, alpha=0.04, color=d["crossover_high_color"], zorder=1)
+    ax.text(30, y_max * 0.88, d["crossover_low_label"], fontsize=8,
+            color=d["crossover_low_color"], ha="center", alpha=0.7, fontstyle="italic")
+    ax.text(800, y_max * 0.88, d["crossover_high_label"], fontsize=8,
+            color=d["crossover_high_color"], ha="center", alpha=0.7, fontstyle="italic")
 
     ax.set_xscale("log")
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(["10", "25", "300", "500", "2,000"])
+    ax.set_xticklabels(d["x_labels"])
     ax.xaxis.set_minor_formatter(ticker.NullFormatter())
-    style_ax(ax, "Latency vs Concurrency — The Crossover (Chicago, p50)", "Latency (ms)", "Virtual Users (log scale)")
+    style_ax(ax, f"Latency vs Concurrency — The Crossover ({region}, p50)", "Latency (ms)", "Virtual Users (log scale)")
     ax.legend(frameon=False, fontsize=9, loc="upper left")
-    ax.set_ylim(0, 170)
+    ax.set_ylim(0, y_max)
     ax.set_xlim(7, 2500)
     fig.tight_layout()
     path = os.path.join(outdir, "chart_concurrency_scaling.svg")
@@ -122,12 +191,12 @@ def chart_concurrency_scaling(outdir):
     return path
 
 
-def chart_throughput_at_scale(outdir):
-    """Grouped bar: RPS across extended suite tests (Chicago)."""
+def chart_throughput_at_scale(outdir, origin):
+    """Grouped bar: RPS across extended suite tests."""
+    d = DATA[origin]["throughput"]
+    region = DATA[origin]["region_label"]
     tests = ["Full Ladder\n(1-1K VUs)", "Soak\n(500 VUs, 10m)", "Spike\n(0-2K VUs)"]
-    akamai = [2132, 3029, 2824]
-    fastly = [1579, 1918, 1834]
-    workers = [2153, 2856, 2663]
+    akamai, fastly, workers = d["akamai"], d["fastly"], d["workers"]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     x = range(len(tests))
@@ -145,7 +214,7 @@ def chart_throughput_at_scale(outdir):
     ax.set_xticks(x)
     ax.set_xticklabels(tests)
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
-    style_ax(ax, "Extended Suite — Throughput at Scale (Chicago)", "Requests / sec")
+    style_ax(ax, f"Extended Suite — Throughput at Scale ({region})", "Requests / sec")
     ax.legend(frameon=False, fontsize=9, loc="upper right")
     ax.set_ylim(0, max(max(akamai), max(fastly), max(workers)) * 1.2)
     fig.tight_layout()
@@ -155,12 +224,11 @@ def chart_throughput_at_scale(outdir):
     return path
 
 
-def chart_cold_start(outdir):
+def chart_cold_start(outdir, origin):
     """Horizontal bar: cold start p50 by region."""
-    regions = ["Singapore", "Frankfurt", "Chicago"]
-    akamai = [48.4, 132.3, 45.2]
-    fastly = [4.9, 7.1, 6.6]
-    workers = [11.9, 11.5, 10.4]
+    d = DATA[origin]["cold_start"]
+    regions = d["regions"]
+    akamai, fastly, workers = d["akamai"], d["fastly"], d["workers"]
 
     fig, ax = plt.subplots(figsize=(8, 3.5))
     y = range(len(regions))
@@ -197,15 +265,17 @@ def svg_to_base64(path):
 def main():
     parser = argparse.ArgumentParser(description="Generate scorecard charts")
     parser.add_argument("--out", default="results/charts/", help="Output directory")
+    parser.add_argument("--origin", choices=["linode", "gcp"], default="linode",
+                        help="Runner origin dataset to use (default: linode)")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
 
     charts = [
-        ("executive_summary", chart_executive_summary(args.out)),
-        ("concurrency_scaling", chart_concurrency_scaling(args.out)),
-        ("throughput_at_scale", chart_throughput_at_scale(args.out)),
-        ("cold_start", chart_cold_start(args.out)),
+        ("executive_summary", chart_executive_summary(args.out, args.origin)),
+        ("concurrency_scaling", chart_concurrency_scaling(args.out, args.origin)),
+        ("throughput_at_scale", chart_throughput_at_scale(args.out, args.origin)),
+        ("cold_start", chart_cold_start(args.out, args.origin)),
     ]
 
     b64_path = os.path.join(args.out, "charts_base64.txt")

@@ -27,12 +27,14 @@ SSH_USER="${GCP_SSH_USER:-$(whoami)}"
 # For 2,000+ VU spike tests, the orchestrator fans out across all 3 runners.
 MACHINE_TYPE="${GCP_MACHINE_TYPE:-e2-standard-4}"
 
-# GCP zones chosen to approximate the same cities as the Linode runners:
-#   us-central1-a  (Iowa)      ↔ Linode us-ord (Chicago)
-#   europe-west1-b (Belgium)   ↔ Linode eu-central (Frankfurt)
-#   asia-southeast1-a (Singapore) ↔ Linode ap-south (Singapore)
-ZONES=("us-central1-a" "europe-west1-b" "asia-southeast1-a")
-NAMES=("k6-gcp-us-central" "k6-gcp-eu-west" "k6-gcp-ap-southeast")
+# GCP zones chosen to approximate the same cities as the Linode runners.
+# NOTE: us-central1-a/b and asia-southeast1-a hit ZONE_RESOURCE_POOL_EXHAUSTED
+# for e2-standard-4 on April 13 2026. These fallback zones have confirmed capacity:
+#   us-east4-c       (Virginia)   ↔ Linode us-ord (Chicago)
+#   europe-west1-b   (Belgium)    ↔ Linode eu-central (Frankfurt)
+#   asia-southeast1-b (Singapore) ↔ Linode ap-south (Singapore)
+ZONES=("us-east4-c" "europe-west1-b" "asia-southeast1-b")
+NAMES=("k6-gcp-us-east" "k6-gcp-eu-west" "k6-gcp-ap-southeast")
 
 command_exists() { command -v "$1" &>/dev/null; }
 
@@ -98,8 +100,8 @@ curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/
 echo 'deb [signed-by=/usr/share/keyrings/k6.gpg] https://dl.k6.io/deb stable main' | sudo tee /etc/apt/sources.list.d/k6.list
 sudo apt-get update -qq
 sudo apt-get install -y -qq k6
-sudo mkdir -p /opt/bench/fixtures
-sudo chown -R $(whoami):$(whoami) /opt/bench
+sudo mkdir -p /opt/bench/fixtures /opt/results
+sudo chown -R $(whoami):$(whoami) /opt/bench /opt/results
 k6 version
 echo "k6 install complete"
 INSTALL
