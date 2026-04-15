@@ -57,7 +57,8 @@ crash.*.log
 /docs/INTERNAL_MEMO.md
 /docs/OPUS_WORK_SUMMARY.md
 
-# --- Blog export (local only) ---
+# --- Blog (private — not published) ---
+/blog/
 /wasmnism-blog.*
 /*-blog.*
 
