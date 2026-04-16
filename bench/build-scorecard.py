@@ -202,7 +202,7 @@ def cold_start_section(dirs, names):
     """Generate cold start table from cold-start-rules JSON."""
     lines = []
     lines.append("\n## 3. Cold Start Latency\n")
-    lines.append("Cold start measures round-trip time after 120s idle eviction.")
+    lines.append("Cold start measures post-idle round-trip overhead when CDN/networking connections have gone idle after 120 seconds.")
     lines.append("")
     lines.append(f"| Region | {names[0]} p50 | {names[0]} p95 | {names[1]} p50 | {names[1]} p95 | {names[2]} p50 | {names[2]} p95 |")
     lines.append("|:-------|----------:|----------:|----------:|----------:|----------:|----------:|")
@@ -421,7 +421,7 @@ def main():
     lines.append("## 1. How to Read This Scorecard\n")
     lines.append("| Test | What it measures | How it works |")
     lines.append("|:-----|:-----------------|:-------------|")
-    lines.append("| **Cold Start** | First request after idle eviction | 1 VU, 120s idle, 10 iterations |")
+    lines.append("| **Cold Start** | Post-idle round-trip overhead (CDN connection re-establishment + compute) | 1 VU, 120s idle, 10 iterations |")
     lines.append("| **Warm Light** | Baseline `/gateway/health` | 10 VUs, 60s |")
     lines.append("| **Warm Policy** | Full 7-step moderation pipeline | 10 VUs, 60s |")
     lines.append("| **Concurrency Ladder** | Ramp behaviour 1→50 VUs | 30s stages, 150s total |")

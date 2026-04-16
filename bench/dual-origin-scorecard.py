@@ -333,7 +333,7 @@ def section_cold_start():
     lines = [
         "\n---\n",
         "## 4. Cold Start Comparison\n",
-        "Cold start p50 from both origins, all region pairs.\n",
+        "Post-idle round-trip overhead (p50) from both origins, all region pairs.\n",
         "| Region | Platform | Linode p50 | GCP p50 | Delta |",
         "|:-------|:---------|----------:|-------:|---------:|",
     ]
@@ -506,7 +506,7 @@ def main():
     sections.append("## Methodology Notes\n")
     sections.append("- **Base suite**: 7 runs per test, median selected. Tests: warm-light, warm-policy, concurrency-ladder.")
     sections.append("- **Extended suite**: Single run per test. Tests: full ladder (1→1K VUs), soak (500 VUs, 10 min), spike (0→2K VUs).")
-    sections.append("- **Cold start**: 10 iterations after 120s idle eviction.")
+    sections.append("- **Cold start**: 10 iterations after 120s idle (measures CDN/networking connection re-establishment + compute startup).")
     sections.append("- **Client-side timing**: k6 `http_req_duration` is the source of truth (includes TLS, network, processing).")
     sections.append("- **Linode runner**: Linode Dedicated CPU (Chicago). Akamai owns Linode — traffic uses private backbone.")
     sections.append("- **GCP runner**: e2-standard-4 (us-east1). Neutral cloud — traffic traverses public internet to all platforms.")
