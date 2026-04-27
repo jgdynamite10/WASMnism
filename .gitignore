@@ -51,6 +51,7 @@ crash.*.log
 /bench/cleanup-stale.sh
 
 # --- Internal planning docs (local only) ---
+/docs/BENCHMARK_ROLLOUT_PLAN.md
 /docs/CLIPCLAP_INSPECTION.md
 /docs/EXECUTION_PLAN.md
 /docs/INTERNAL_MEMO.md

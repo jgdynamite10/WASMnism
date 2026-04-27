@@ -225,6 +225,6 @@ Cold start measures WASM module instantiation overhead for the rules-only pipeli
 - **k6 maxDuration**: Cold start tests need high `maxDuration` (10 iterations x 120s gaps). The script sets this dynamically.
 - **Paid tiers**: All platforms must use paid tiers for benchmark accuracy. See `.cursorrules` for tier details.
 - **Runner location matters**: Multi-region results isolate network latency. Single-region results from your laptop include your ISP latency.
-- **Origin bias**: Linode is Akamai-owned. For unbiased results, run from GCP or run from both and compare. See `docs/benchmark_contract.md` §7.3.2.
+- **Origin bias**: Linode is Akamai-owned. For unbiased results, run from GCP or run from both and compare. See `docs/benchmark_contract.md` Section 7.3.2.
 - **High VU runner sizing**: The extended suite (1,000 VUs, soak, spike) requires ≥4 vCPU / 16 GB runners. Linode Nanodes (1 vCPU) cannot run the extended suite — use GCP `e2-standard-4` instances.
 - **Spike distribution**: For 2,000+ VU spike tests, the load is distributed across 3 runners (~667 VUs each). A single runner above ~1,000 VUs may bottleneck on the runner itself rather than the gateway.
