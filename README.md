@@ -53,7 +53,7 @@ A Svelte SaaS-style dashboard with:
 - Automated reproduce pipeline: `make benchmark` (single region) or `make bench-multiregion` (3 regions)
 - **Dual-origin runners**: Linode (Akamai-owned) and GCP (neutral) for bias-controlled comparisons
 - Multi-region k6 infrastructure: Linode Nanodes or GCP e2-standard-4 in US, EU, and APAC
-- Measurement contract v3.3 with 8-scenario validation suite for correctness
+- Measurement contract v3.4 with 8-scenario validation suite for correctness
 
 ---
 
@@ -185,7 +185,7 @@ Returns gateway status, platform, and region.
 
 ## Benchmark
 
-See the full [measurement contract](docs/benchmark_contract.md) (v3.3) for schemas, SLOs, and fairness rules.
+See the full [measurement contract](docs/benchmark_contract.md) (v3.4) for schemas, SLOs, and fairness rules.
 
 ### Running Benchmarks
 

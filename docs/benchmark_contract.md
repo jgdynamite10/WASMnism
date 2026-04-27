@@ -1,7 +1,7 @@
 # WASMnism Benchmark Contract
 
-**Version:** 3.3  
-**Date:** April 13, 2026  
+**Version:** 3.4  
+**Date:** April 14, 2026  
 **Status:** Active
 
 ---
@@ -192,11 +192,13 @@ benchmark; they are the reference lines on the scorecard.
 
 **6.1.1 Cold Start — Rules Only**
 
+Scorecards report this as **post-idle round-trip overhead**; measurement protocol and semantics are defined in **§7.4** (not “WASM cold start” or instance eviction alone).
+
 | Metric | Target | Notes |
 |--------|--------|-------|
-| p50 cold start | ≤ 100 ms | WASM instantiation only, no model load |
-| p90 cold start | ≤ 300 ms | Includes platform scheduling variance |
-| Error rate | 0% | Cold starts must not fail |
+| p50 cold start | ≤ 100 ms | Rules only (`ml: false`, no model). End-to-end RTT after 120s idle: **connection re-establishment (e.g. TCP/TLS, CDN path) plus compute** — see §7.4 per platform. |
+| p90 cold start | ≤ 300 ms | Includes tail latency on the client–edge path and platform variance. |
+| Error rate | 0% | Post-idle requests must not fail |
 
 **6.1.2 Warm Light** (GET /gateway/health)
 
@@ -535,3 +537,4 @@ All three platforms must produce 8/8 pass before performance benchmarks are run.
 | 3.1 | 2026-03-26 | Two-tier benchmark: primary (rules, `ml: false`) and stretch (ML). Added `ml` request field, `warm-policy.js`, rules-only cold start. Updated SLOs and scorecard format. |
 | 3.2 | 2026-04-12 | Tier 1 (rules-only) contract: removed ML/stretch content; response headers moved to §4; validation is 8 scenarios; `ml` defaults `false`; ML contract and benchmarks on `ml-inference` branch. |
 | 3.3 | 2026-04-13 | Extended suite (1K ladder, 500-VU soak, 2K spike); GCP neutral-origin runners; dual-origin bias methodology; fixed `concurrency-rules` → `concurrency-ladder` naming. |
+| 3.4 | 2026-04-14 | Methodology: **§6.3–§6.6** (k6 DNS cache, connection reuse, single runner IP, spike/CDN mapping). **§7.4** rewrites cold-start semantics (post-idle / CDN+TLS + compute, not WASM eviction as sole story). **§6.1.1** SLO notes aligned. Engineering review (Akamai). |

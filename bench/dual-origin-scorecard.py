@@ -486,7 +486,7 @@ def main():
     sections.append("| **GCP Runner** | us-east1 (e2-standard-4) |")
     sections.append("| **Linode Regions** | Chicago (US), Frankfurt (EU), Singapore (APAC) |")
     sections.append("| **GCP Regions** | N. Virginia (US), Belgium (EU), Singapore (APAC) |")
-    sections.append("| **Contract** | v3.3 — rules-only pipeline |")
+    sections.append("| **Contract** | v3.4 — rules-only pipeline |")
     sections.append("| **Methodology** | 7-run medians · k6 `http_req_duration` |")
     sections.append("")
     sections.append(

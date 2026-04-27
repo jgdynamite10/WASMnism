@@ -411,7 +411,7 @@ def main():
     lines.append(f"| **Date** | {date_label} |")
     lines.append(f"| **Runner** | {runner} |")
     lines.append(f"| **Regions** | {', '.join(REGION_MAP.get(r, r) for r in regions_found)} |")
-    lines.append("| **Contract** | v3.3 — rules-only pipeline |")
+    lines.append("| **Contract** | v3.4 — rules-only pipeline |")
     lines.append("| **Build** | `main` branch, ML stripped |")
     lines.append("| **Methodology** | 7-run medians · k6 `http_req_duration` |")
     lines.append("")
