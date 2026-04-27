@@ -1,0 +1,40 @@
+---
+description: Use .plan.md format (YAML frontmatter + todos) for any document the user needs to review or act on
+alwaysApply: true
+---
+
+# Plan format for reviewable documents
+
+Any document intended for the user to read, review, or act on — plans, checklists, coordination files, verification guides — must use the Cursor plan format:
+
+```yaml
+---
+name: Short human-readable title
+overview: "One sentence describing the purpose and scope of this document."
+todos:
+  - id: unique-kebab-id
+    content: "Actionable item the user or agent needs to complete"
+    status: pending   # pending | in_progress | completed | cancelled
+isProject: false
+---
+```
+
+Followed by standard Markdown content.
+
+## Rules
+
+- Always include `name`, `overview`, `todos` (at least one), and `isProject: false`.
+- Each todo maps to a concrete action — W1/W2/W3 workstream steps, checklist items, verification checks.
+- Local-only files (gitignored) use this format too — it makes them readable in the Cursor sidebar.
+- Plain Markdown without frontmatter is only acceptable for auto-generated output (scorecards, raw results).
+- Files that are **not** for the user to review (e.g. `AGENT_HANDOVER.md`, `PROJECT_STATE.md`) are exempt.
+
+## File naming and location
+
+| Use case | Location | Extension |
+|----------|----------|-----------|
+| Coordination plan / verification / audit | `/Users/jglover/.cursor/plans/` | `.plan.md` |
+| Private tracker (IPs, ARNs, tickets) | `docs/*.local.md` (gitignored) | `.local.md` — plain Markdown, no frontmatter |
+| Public-facing doc | Repo `docs/` | `.md` — no frontmatter needed |
+
+**Never** put a coordination plan in `docs/` with a `.local.md` extension — it won't render as a Cursor plan. Always create it in `.cursor/plans/` with a `.plan.md` extension.
