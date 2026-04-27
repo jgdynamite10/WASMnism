@@ -30,7 +30,7 @@ component = "frontend"
 source = "../../target/wasm32-wasip1/release/clipclap_gateway_spin.wasm"
 allowed_outbound_hosts = []
 key_value_stores = ["default"]
-files = []
+files = [{ source = "../../models/toxicity/", destination = "/models/toxicity" }]
 
 [component.gateway.variables]
 inference_url = "{{ inference_url }}"

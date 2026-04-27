@@ -18,11 +18,11 @@
 
 | Goal | Owner / agent | Status |
 |------|----------------|--------|
-| Tier 2: `ml-inference` build + deploy **Akamai** + **AWS Lambda** | TBD | ⬜ |
-| Artifacts: model + vocab in expected paths; no secrets in git | TBD | ⬜ |
-| **Stakeholder & provider notice** (window + traffic profile) | TBD | ⬜ |
-| **GCP** only: `gcp-runners-up` → bench → `validate-results.py` → teardown | TBD | ⬜ |
-| Scorecard + contract disclosure (e.g. v3.4, origin = GCP) | TBD | ⬜ |
+| Tier 2: `ml-inference` build + deploy **Akamai** + **AWS Lambda** | TBD | 🟡 Branch `ml-inference` has ML + Lambda; local build + `cargo lambda build` OK. **Cloud deploy** needs operator (`spin aka deploy`, `make deploy-lambda` with `LAMBDA_*`) |
+| Artifacts: model + vocab in expected paths; no secrets in git | TBD | 🟡 `gh release download v0.2.0-models` to `edge-gateway/models/toxicity/` (gitignored) + checksums in README |
+| **Stakeholder & provider notice** (window + traffic profile) | TBD | 🟡 Checklist in `BENCHMARK_ROLLOUT_PLAN.local.md` — **send** before next heavy k6 (human) |
+| **GCP** only: `gcp-runners-up` → bench → `validate-results.py` → teardown | TBD | 🟢 `make gcp-runners-up/sync` + teardown exercised Apr 27; re-run for next bench round. Validate used Apr 13 GCP `multiregion_*` dirs (see W5) |
+| Scorecard + contract disclosure (e.g. v3.4, origin = GCP) | TBD | 🟢 `results/rollout_w5_gcp_base_apr13.{md,html,pdf}` from validated GCP dirs; `make report` supports `RESULT_*` overrides |
 
 ---
 

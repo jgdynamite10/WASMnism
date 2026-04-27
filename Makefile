@@ -1,4 +1,4 @@
-.PHONY: prereqs build build-frontend deploy-akamai deploy-fastly deploy-workers test clean validate benchmark bench-multiregion bench-full scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down gcp-runners-up gcp-runners-status gcp-runners-sync gcp-runners-down help
+.PHONY: prereqs build build-frontend build-lambda deploy-akamai deploy-fastly deploy-workers deploy-lambda test clean validate benchmark bench-multiregion bench-full scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down gcp-runners-up gcp-runners-status gcp-runners-sync gcp-runners-down help
 
 # Default gateway URL (override with URL=...)
 URL ?= https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
@@ -25,6 +25,10 @@ build:
 build-frontend:
 	$(MAKE) -C edge-gateway build-frontend
 
+# Tier 2 (ml-inference): native Lambda + Tract; requires LAMBDA_ROLE, LAMBDA_S3_BUCKET
+build-lambda:
+	$(MAKE) -C edge-gateway build-lambda
+
 test:
 	$(MAKE) -C edge-gateway test
 
@@ -40,6 +44,9 @@ deploy-fastly:
 
 deploy-workers:
 	$(MAKE) -C edge-gateway deploy-workers
+
+deploy-lambda:
+	$(MAKE) -C edge-gateway deploy-lambda
 
 # ── Benchmark (single region, local machine) ─────────────────
 validate:
@@ -99,17 +106,26 @@ gcp-runners-down:
 	./deploy/gcp-runner-setup.sh teardown
 
 # ── Report Generation ─────────────────────────────────────────
+# Optional: set RESULT_AKAMAI, RESULT_FASTLY, RESULT_WORKERS to exact multiregion_* paths
+# (e.g. validated GCP base runs). Otherwise the latest multiregion_* per platform is used.
 report:
 	@if [ -z "$(NAME)" ]; then \
 		echo "Usage: make report PLATFORMS=\"akamai fastly workers\" NAME=\"scorecard_name\""; \
+		echo "Optional: RESULT_AKAMAI=... RESULT_FASTLY=... RESULT_WORKERS=... (override auto latest)"; \
 		exit 1; \
 	fi
 	@echo "=== Validating results ==="
-	@for p in $(PLATFORMS); do \
-		latest=$$(ls -td results/$$p/multiregion_* 2>/dev/null | head -1); \
-		if [ -z "$$latest" ]; then echo "ERROR: No results for $$p"; exit 1; fi; \
-		DIRS="$$DIRS $$latest"; \
-	done; \
+	@set -e; DIRS=""; \
+	if [ -n "$(RESULT_AKAMAI)" ] && [ -n "$(RESULT_FASTLY)" ] && [ -n "$(RESULT_WORKERS)" ]; then \
+		DIRS="$(RESULT_AKAMAI) $(RESULT_FASTLY) $(RESULT_WORKERS)"; \
+		echo "Using explicit result dirs: $$DIRS"; \
+	else \
+		for p in $(PLATFORMS); do \
+			latest=$$(ls -td results/$$p/multiregion_* 2>/dev/null | head -1); \
+			if [ -z "$$latest" ]; then echo "ERROR: No results for $$p"; exit 1; fi; \
+			DIRS="$$DIRS $$latest"; \
+		done; \
+	fi; \
 	python3 bench/validate-results.py $$DIRS
 	@echo "=== Generating scorecard ==="
 	./bench/generate-scorecard.sh results/$(NAME).md
@@ -137,6 +153,8 @@ help:
 	@echo "  make deploy-akamai                   Build + deploy to Akamai Functions"
 	@echo "  make deploy-fastly                   Build + deploy to Fastly Compute"
 	@echo "  make deploy-workers                  Build + deploy to Cloudflare Workers"
+	@echo "  make build-lambda                    (Tier 2) Build AWS Lambda (ARM64) + static assets"
+	@echo "  make deploy-lambda                   (Tier 2) deploy — needs LAMBDA_ROLE, LAMBDA_S3_BUCKET"
 	@echo "  make test                            Run Rust unit tests"
 	@echo ""
 	@echo "Benchmark (single region):"

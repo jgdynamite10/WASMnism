@@ -5,6 +5,7 @@ use spin_sdk::{
     key_value::Store,
     variables,
 };
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 use clipclap_gateway_core::{
@@ -14,8 +15,58 @@ use clipclap_gateway_core::{
     hash::image_hash,
     pipeline::{self, ModerationRequest},
     policy::PolicyConfig,
+    toxicity::ToxicityClassifier,
     types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
+
+// ---------------------------------------------------------------------------
+// ML model loading (lazy, survives across warm-start requests)
+// ---------------------------------------------------------------------------
+
+static CLASSIFIER: OnceLock<Option<ToxicityClassifier>> = OnceLock::new();
+static CLASSIFIER_ERROR: OnceLock<Option<String>> = OnceLock::new();
+
+fn get_classifier() -> Option<&'static ToxicityClassifier> {
+    CLASSIFIER
+        .get_or_init(|| {
+            let model_bytes = match std::fs::read("/models/toxicity/model.nnef.tar") {
+                Ok(b) => b,
+                Err(e) => {
+                    let msg = format!("model read: {e}");
+                    let _ = CLASSIFIER_ERROR.set(Some(msg));
+                    return None;
+                }
+            };
+            let vocab = match std::fs::read_to_string("/models/toxicity/vocab.txt") {
+                Ok(v) => v,
+                Err(e) => {
+                    let msg = format!("vocab read: {e}");
+                    let _ = CLASSIFIER_ERROR.set(Some(msg));
+                    return None;
+                }
+            };
+            let msg = format!("model={} bytes, vocab={} lines", model_bytes.len(), vocab.lines().count());
+            match ToxicityClassifier::from_nnef_tar(&model_bytes, &vocab) {
+                Ok(c) => {
+                    let _ = CLASSIFIER_ERROR.set(Some(format!("ok: {msg}")));
+                    Some(c)
+                }
+                Err(e) => {
+                    let _ = CLASSIFIER_ERROR.set(Some(format!("init failed ({msg}): {e}")));
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+fn classifier_status() -> String {
+    CLASSIFIER_ERROR
+        .get()
+        .and_then(|o| o.as_ref())
+        .cloned()
+        .unwrap_or_else(|| "not initialized".into())
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +180,20 @@ async fn handle(req: Request) -> Response {
 fn handle_health(_req: Request, _params: Params) -> Result<impl IntoResponse> {
     let cfg = config();
     let rid = request_id();
-    Ok(json_ok(&handlers::health(&cfg), &rid, &cfg))
+
+    let model_exists = std::fs::metadata("/models/toxicity/model.nnef.tar").is_ok();
+    let vocab_exists = std::fs::metadata("/models/toxicity/vocab.txt").is_ok();
+    let already_loaded = CLASSIFIER.get().map(|o| o.is_some()).unwrap_or(false);
+
+    let mut health = serde_json::to_value(&handlers::health(&cfg)).unwrap_or_default();
+    if let Some(obj) = health.as_object_mut() {
+        obj.insert("ml_model_file".into(), model_exists.into());
+        obj.insert("ml_vocab_file".into(), vocab_exists.into());
+        obj.insert("ml_classifier_ready".into(), already_loaded.into());
+        obj.insert("ml_status".into(), classifier_status().into());
+    }
+
+    Ok(json_ok(&health, &rid, &cfg))
 }
 
 fn handle_echo(req: Request, _params: Params) -> Result<impl IntoResponse> {
@@ -189,7 +253,7 @@ fn handle_moderate(req: Request, _params: Params) -> Result<impl IntoResponse> {
         Err(err) => return Ok(error_resp(&err, &rid, &cfg)),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None);
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
     Ok(json_ok(&resp, &rid, &cfg))
 }
 

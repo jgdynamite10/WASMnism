@@ -4,5 +4,7 @@ members = [
     "adapters/spin",
     "adapters/fastly",
     "adapters/workers",
+    "adapters/lambda",
 ]
+exclude = ["tools/convert-to-nnef"]
 resolver = "2"
