@@ -99,17 +99,26 @@ gcp-runners-down:
 	./deploy/gcp-runner-setup.sh teardown
 
 # ── Report Generation ─────────────────────────────────────────
+# Optional: set RESULT_AKAMAI, RESULT_FASTLY, RESULT_WORKERS to exact multiregion_* paths
+# (e.g. validated GCP base runs). Otherwise the latest multiregion_* per platform is used.
 report:
 	@if [ -z "$(NAME)" ]; then \
 		echo "Usage: make report PLATFORMS=\"akamai fastly workers\" NAME=\"scorecard_name\""; \
+		echo "Optional: RESULT_AKAMAI=... RESULT_FASTLY=... RESULT_WORKERS=... (override auto latest)"; \
 		exit 1; \
 	fi
 	@echo "=== Validating results ==="
-	@for p in $(PLATFORMS); do \
-		latest=$$(ls -td results/$$p/multiregion_* 2>/dev/null | head -1); \
-		if [ -z "$$latest" ]; then echo "ERROR: No results for $$p"; exit 1; fi; \
-		DIRS="$$DIRS $$latest"; \
-	done; \
+	@set -e; DIRS=""; \
+	if [ -n "$(RESULT_AKAMAI)" ] && [ -n "$(RESULT_FASTLY)" ] && [ -n "$(RESULT_WORKERS)" ]; then \
+		DIRS="$(RESULT_AKAMAI) $(RESULT_FASTLY) $(RESULT_WORKERS)"; \
+		echo "Using explicit result dirs: $$DIRS"; \
+	else \
+		for p in $(PLATFORMS); do \
+			latest=$$(ls -td results/$$p/multiregion_* 2>/dev/null | head -1); \
+			if [ -z "$$latest" ]; then echo "ERROR: No results for $$p"; exit 1; fi; \
+			DIRS="$$DIRS $$latest"; \
+		done; \
+	fi; \
 	python3 bench/validate-results.py $$DIRS
 	@echo "=== Generating scorecard ==="
 	./bench/generate-scorecard.sh results/$(NAME).md
