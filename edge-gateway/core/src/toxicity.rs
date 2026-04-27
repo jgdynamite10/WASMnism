@@ -154,8 +154,13 @@ mod tests {
 
     fn load_classifier() -> ToxicityClassifier {
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../models/toxicity");
-        let model = std::fs::read(base.join("model.onnx")).expect("model.onnx");
-        let vocab = std::fs::read_to_string(base.join("vocab.txt")).expect("vocab.txt");
+        let vocab = std::fs::read_to_string(base.join("vocab.txt"))
+            .expect("vocab.txt (see edge-gateway/models/README.md for v0.2.0-models download)");
+        if let Ok(tar) = std::fs::read(base.join("model.nnef.tar")) {
+            return ToxicityClassifier::from_nnef_tar(&tar, &vocab).expect("classifier from NNEF");
+        }
+        let model = std::fs::read(base.join("model.onnx"))
+            .expect("model.nnef.tar or model.onnx under models/toxicity/");
         ToxicityClassifier::from_bytes(&model, &vocab).expect("classifier init")
     }
 
