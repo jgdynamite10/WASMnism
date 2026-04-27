@@ -48,7 +48,6 @@ crash.*.log
 # --- Housekeeping scripts (local tooling, never public) ---
 /scripts/
 /bench/generate-scorecard.sh
-/bench/validate-results.py
 /bench/cleanup-stale.sh
 
 # --- Internal planning docs (local only) ---
