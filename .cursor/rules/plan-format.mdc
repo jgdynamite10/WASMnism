@@ -1,0 +1,40 @@
+---
+description: Use .plan.md format (YAML frontmatter + todos) for any document the user needs to review or act on
+alwaysApply: true
+---
+
+# Plan format for reviewable documents
+
+Any document intended for the user to read, review, or act on — plans, checklists, coordination files, verification guides, private trackers — must use the Cursor plan format:
+
+```yaml
+---
+name: Short human-readable title
+overview: "One sentence describing the purpose and scope of this document."
+todos:
+  - id: unique-kebab-id
+    content: "Actionable item the user or agent needs to complete"
+    status: pending   # pending | in_progress | completed | cancelled
+isProject: false
+---
+```
+
+Followed by standard Markdown content.
+
+## Rules
+
+- Always include `name`, `overview`, `todos` (at least one), and `isProject: false`.
+- Each todo maps to a concrete action — W1/W2/W3 workstream steps, checklist items, verification checks.
+- Plain Markdown without frontmatter is only acceptable for auto-generated output (scorecards, raw results).
+- Files that are **not** for the user to review (e.g. `AGENT_HANDOVER.md`, `PROJECT_STATE.md`) are exempt.
+
+## File location
+
+| Use case | Location | Extension |
+|----------|----------|-----------|
+| Coordination plan, verification, audit, private tracker (one consolidated file) | `/Users/jglover/.cursor/plans/` | `.plan.md` |
+| Public-facing doc | Repo `docs/` | `.md` (no frontmatter needed) |
+
+`~/.cursor/plans/` lives outside any git repo, so private content (IPs, ARNs, tickets, secrets) is safe there. Use a single `.plan.md` per topic — coordination + tracker in one file.
+
+**Never** put a reviewable plan in `docs/` (gitignored or otherwise) — it will not render interactively in Cursor. Always use `.cursor/plans/*.plan.md`.
