@@ -44,7 +44,7 @@ pub fn echo(req: &EchoRequest, config: &GatewayConfig, request_id: &str) -> Echo
 // ---------------------------------------------------------------------------
 // POST /gateway/mock-classify
 //
-// Deterministic score distribution per benchmark_contract.md §5.3:
+// Deterministic score distribution per benchmark_contract.md section 5.3:
 //   1 label  → [1.00]
 //   2 labels → [0.70, 0.30]
 //   3 labels → [0.70, 0.20, 0.10]

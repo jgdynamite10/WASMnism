@@ -192,11 +192,11 @@ benchmark; they are the reference lines on the scorecard.
 
 **6.1.1 Cold Start — Rules Only**
 
-Scorecards report this as **post-idle round-trip overhead**; measurement protocol and semantics are defined in **§7.4** (not “WASM cold start” or instance eviction alone).
+Scorecards report this as **post-idle round-trip overhead**; measurement protocol and semantics are defined in **Section 7.4** (not “WASM cold start” or instance eviction alone).
 
 | Metric | Target | Notes |
 |--------|--------|-------|
-| p50 cold start | ≤ 100 ms | Rules only (`ml: false`, no model). End-to-end RTT after 120s idle: **connection re-establishment (e.g. TCP/TLS, CDN path) plus compute** — see §7.4 per platform. |
+| p50 cold start | ≤ 100 ms | Rules only (`ml: false`, no model). End-to-end RTT after 120s idle: **connection re-establishment (e.g. TCP/TLS, CDN path) plus compute** — see Section 7.4 per platform. |
 | p90 cold start | ≤ 300 ms | Includes tail latency on the client–edge path and platform variance. |
 | Error rate | 0% | Post-idle requests must not fail |
 
@@ -293,7 +293,7 @@ TCP/TLS connections are reused across requests. This means:
 - DNS resolution happens once per connection, not per request.
 - TLS handshake overhead is amortized across many requests.
 - Results reflect **warm connection** performance for most of the test duration.
-- The cold start test (§7.4) is the only test designed to measure post-idle
+- The cold start test (Section 7.4) is the only test designed to measure post-idle
   connection re-establishment.
 
 ### 6.5 Single-Source-IP Limitation
@@ -379,7 +379,7 @@ Tests are run from **3 geographic locations** to capture regional variance.
 #### 7.3.1 Runner Origins
 
 Two runner infrastructures are available. Using both eliminates
-backbone bias (see §7.3.2):
+backbone bias (see Section 7.3.2):
 
 | Region | Linode (Akamai-owned) | GCP (Neutral) |
 |--------|----------------------|----------------|
@@ -442,7 +442,7 @@ sole or primary factor.
 | Memory | Platform default (document actual value) |
 | CPU | Platform default (document actual value) |
 | Scaling | Single instance, no auto-scale during run |
-| KV Store | Platform-native (see §5) |
+| KV Store | Platform-native (see Section 5) |
 | Caching | No CDN or response caching; bypass if platform enables by default |
 | TLS | Required (HTTPS). All platforms use TLS. |
 
@@ -535,6 +535,6 @@ All three platforms must produce 8/8 pass before performance benchmarks are run.
 | 2.1 | 2026-03-25 | Safety labels, image blocklist, moderation validation suite (9 scenarios with ML), text field extraction |
 | 3.0 | 2026-03-26 | Embedded ML toxicity classifier; 5-test benchmark suite (cold start, warm light, warm heavy, concurrency ladder, consistency); removed external inference proxy; updated SLOs for ML workload |
 | 3.1 | 2026-03-26 | Two-tier benchmark: primary (rules, `ml: false`) and stretch (ML). Added `ml` request field, `warm-policy.js`, rules-only cold start. Updated SLOs and scorecard format. |
-| 3.2 | 2026-04-12 | Tier 1 (rules-only) contract: removed ML/stretch content; response headers moved to §4; validation is 8 scenarios; `ml` defaults `false`; ML contract and benchmarks on `ml-inference` branch. |
+| 3.2 | 2026-04-12 | Tier 1 (rules-only) contract: removed ML/stretch content; response headers moved to Section 4; validation is 8 scenarios; `ml` defaults `false`; ML contract and benchmarks on `ml-inference` branch. |
 | 3.3 | 2026-04-13 | Extended suite (1K ladder, 500-VU soak, 2K spike); GCP neutral-origin runners; dual-origin bias methodology; fixed `concurrency-rules` → `concurrency-ladder` naming. |
-| 3.4 | 2026-04-14 | Methodology: **§6.3–§6.6** (k6 DNS cache, connection reuse, single runner IP, spike/CDN mapping). **§7.4** rewrites cold-start semantics (post-idle / CDN+TLS + compute, not WASM eviction as sole story). **§6.1.1** SLO notes aligned. Engineering review (Akamai). |
+| 3.4 | 2026-04-14 | Methodology: **Sections 6.3–6.6** (k6 DNS cache, connection reuse, single runner IP, spike/CDN mapping). **Section 7.4** rewrites cold-start semantics (post-idle / CDN+TLS + compute, not WASM eviction as sole story). **Section 6.1.1** SLO notes aligned. Engineering review (Akamai). |
