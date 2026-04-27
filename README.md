@@ -101,7 +101,6 @@ WASMnism/
 ├── cost/                   # Cost model per 1M requests
 ├── docs/                   # Benchmark contract, moderation guide, reproduce guide
 │   ├── ARCHITECTURE.md     #   Full system architecture reference
-│   ├── benchmark_rollout_plan_public_stub.md  #  Pointer: full plan is local (gitignored)
 │   └── REPRODUCE.md        #   Step-by-step reproduction guide
 └── results/                # Benchmark data (gitignored — not in this repository)
 ```
