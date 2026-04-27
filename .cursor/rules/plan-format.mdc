@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Plan format for reviewable documents
 
-Any document intended for the user to read, review, or act on — plans, checklists, coordination files, verification guides — must use the Cursor plan format:
+Any document intended for the user to read, review, or act on — plans, checklists, coordination files, verification guides, private trackers — must use the Cursor plan format:
 
 ```yaml
 ---
@@ -25,16 +25,16 @@ Followed by standard Markdown content.
 
 - Always include `name`, `overview`, `todos` (at least one), and `isProject: false`.
 - Each todo maps to a concrete action — W1/W2/W3 workstream steps, checklist items, verification checks.
-- Local-only files (gitignored) use this format too — it makes them readable in the Cursor sidebar.
 - Plain Markdown without frontmatter is only acceptable for auto-generated output (scorecards, raw results).
 - Files that are **not** for the user to review (e.g. `AGENT_HANDOVER.md`, `PROJECT_STATE.md`) are exempt.
 
-## File naming and location
+## File location
 
 | Use case | Location | Extension |
 |----------|----------|-----------|
-| Coordination plan / verification / audit | `/Users/jglover/.cursor/plans/` | `.plan.md` |
-| Private tracker (IPs, ARNs, tickets) | `docs/*.local.md` (gitignored) | `.local.md` — plain Markdown, no frontmatter |
-| Public-facing doc | Repo `docs/` | `.md` — no frontmatter needed |
+| Coordination plan, verification, audit, private tracker (one consolidated file) | `/Users/jglover/.cursor/plans/` | `.plan.md` |
+| Public-facing doc | Repo `docs/` | `.md` (no frontmatter needed) |
 
-**Never** put a coordination plan in `docs/` with a `.local.md` extension — it won't render as a Cursor plan. Always create it in `.cursor/plans/` with a `.plan.md` extension.
+`~/.cursor/plans/` lives outside any git repo, so private content (IPs, ARNs, tickets, secrets) is safe there. Use a single `.plan.md` per topic — coordination + tracker in one file.
+
+**Never** put a reviewable plan in `docs/` (gitignored or otherwise) — it will not render interactively in Cursor. Always use `.cursor/plans/*.plan.md`.
