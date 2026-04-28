@@ -10,11 +10,11 @@ use uuid::Uuid;
 
 use clipclap_gateway_core::{
     cache::CachedVerdict,
-    error::{map_upstream_status, GatewayError},
+    error::GatewayError,
     handlers,
     pipeline::{self, ModerationRequest},
     toxicity::ToxicityClassifier,
-    types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
+    types::{EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
 
 static STATIC_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
@@ -281,7 +281,9 @@ fn handle_moderate(req: &Request) -> Response<Body> {
         Err(err) => return error_resp(&err, &rid, &cfg),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
+    // Only load the Tract model when the request explicitly asks for ML scoring.
+    let classifier = if mod_req.ml { get_classifier() } else { None };
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, classifier);
     json_ok(&resp, &rid, &cfg)
 }
 
@@ -329,7 +331,18 @@ async fn handle_moderate_cached(req: &Request, dynamo: &DynamoClient) -> Respons
 }
 
 // ---------------------------------------------------------------------------
-// Mode 3: Full Pipeline (POST /api/clip/moderate)
+// Mode 3: Full Pipeline with local ML (POST /api/clip/moderate)
+//
+// Runs the complete rules + Tract toxicity pipeline locally on AWS Lambda.
+// Standalone — no outbound inference call. Lambda is an independent Tier 2
+// benchmark target; it does NOT call Akamai or any other service.
+//
+// Flow:
+//   1. Parse body; extract labels and text
+//   2. Rules pre-check; early-exit if blocked
+//   3. DynamoDB cache lookup; early-exit on hit
+//   4. Tract ML inference (model lazy-loads via OnceLock on first ML request)
+//   5. Cache verdict to DynamoDB; return response
 // ---------------------------------------------------------------------------
 
 async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<Body> {
@@ -367,66 +380,41 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
         ml: true,
     };
 
+    // Rules pre-check: fast early-exit before touching the ML model
     let pre = pipeline::pre_moderate(&mod_req, None);
-
-    if let Some(cached) = dynamo_get(dynamo, &pre.hash).await {
-        let resp = pipeline::moderate_cached(&mod_req, Some(&cached), &cfg, &rid, None);
-        return json_ok(&resp, &rid, &cfg);
-    }
 
     if pre.is_blocked() {
         let resp = pipeline::blocked_response(&pre, &cfg, &rid);
         return json_ok(&resp, &rid, &cfg);
     }
 
-    // Classification: call external INFERENCE_URL only when set (e.g. separate embedding service).
-    // Otherwise use deterministic mock scores (benchmark contract section 5.3) — same as handle_clip_classify.
-    let classification: ClassificationResponse =
-        match env::var("INFERENCE_URL") {
-            Ok(url) if !url.trim().is_empty() && url.trim() != "local" => {
-                let upstream_uri = format!("{}/api/clip/classify", url.trim_end_matches('/'));
-                let client = reqwest::Client::new();
-                let upstream_resp = match client
-                    .post(&upstream_uri)
-                    .header("content-type", &content_type)
-                    .header("x-request-id", &rid)
-                    .body(raw_body.clone())
-                    .send()
-                    .await
-                {
-                    Ok(resp) => resp,
-                    Err(_) => {
-                        let err = GatewayError::UpstreamUnreachable(
-                            "Failed to reach inference service".into(),
-                        );
-                        return error_resp(&err, &rid, &cfg);
-                    }
-                };
+    // DynamoDB cache lookup
+    if let Some(cached) = dynamo_get(dynamo, &pre.hash).await {
+        let resp = pipeline::moderate_cached(&mod_req, Some(&cached), &cfg, &rid, None);
+        return json_ok(&resp, &rid, &cfg);
+    }
 
-                let status = upstream_resp.status().as_u16();
-                let resp_body = upstream_resp.bytes().await.unwrap_or_default();
+    // Full pipeline: rules + local Tract toxicity inference.
+    // get_classifier() loads the NNEF model once per warm Lambda execution context (OnceLock).
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
 
-                let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
-                if let Err(err) = map_upstream_status(status, &body_preview) {
-                    return error_resp(&err, &rid, &cfg);
-                }
-
-                match serde_json::from_slice(&resp_body) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        let err = GatewayError::UpstreamError(
-                            Some(status),
-                            format!("Bad upstream JSON: {e}"),
-                        );
-                        return error_resp(&err, &rid, &cfg);
-                    }
-                }
-            }
-            _ => handlers::mock_classify(&mod_req.labels),
-        };
-
-    let (resp, cached_verdict) = pipeline::post_moderate(&pre, &classification, &cfg, &rid);
-    dynamo_put(dynamo, &pre.hash, &cached_verdict).await;
+    // Cache verdict to DynamoDB
+    let cv = CachedVerdict::new(
+        pre.hash.clone(),
+        clipclap_gateway_core::policy::PolicyResult {
+            verdict: resp.verdict.clone(),
+            flags: vec![],
+            blocked_terms: resp.moderation.blocked_terms.clone(),
+            confidence: resp.moderation.confidence,
+            processing_ms: resp.moderation.processing_ms,
+        },
+        resp.classification.clone(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    );
+    dynamo_put(dynamo, &pre.hash, &cv).await;
 
     json_ok(&resp, &rid, &cfg)
 }

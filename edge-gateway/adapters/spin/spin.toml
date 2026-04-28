@@ -9,10 +9,10 @@ description = "WASM-Powered Content Moderation Gateway with embedded ML toxicity
 inference_url = { default = "" }
 gateway_platform = { default = "spin" }
 gateway_region = { default = "local" }
-# Set to "true" only for standalone deployments where Spin runs the
-# classifier locally (no Lambda backend). Defaults to "false" so the
-# model is never loaded when inference_url points to an external service.
-local_ml = { default = "false" }
+# "true" → Spin runs the Tract toxicity classifier in-process (Tier 2 default).
+# "false" → no model load; use only on rules-only (Tier 1) deploys or if you
+#            want to skip ML for a specific deployment.
+local_ml = { default = "true" }
 
 # --- API routes → gateway WASM ---
 

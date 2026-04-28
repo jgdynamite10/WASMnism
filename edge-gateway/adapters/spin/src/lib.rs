@@ -10,13 +10,12 @@ use uuid::Uuid;
 
 use clipclap_gateway_core::{
     cache::CachedVerdict,
-    error::{map_upstream_status, GatewayError},
+    error::GatewayError,
     handlers,
     hash::image_hash,
     pipeline::{self, ModerationRequest},
-    policy::PolicyConfig,
     toxicity::ToxicityClassifier,
-    types::{ClassificationResponse, EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
+    types::{EchoRequest, ErrorBody, ErrorDetail, GatewayConfig},
 };
 
 // ---------------------------------------------------------------------------
@@ -173,17 +172,10 @@ async fn handle(req: Request) -> Response {
     // Moderation endpoints
     router.post("/gateway/moderate", handle_moderate);
     router.post("/gateway/moderate-cached", handle_moderate_cached);
-    router.post_async("/api/clip/moderate", handle_full_moderate);
+    router.post("/api/clip/moderate", handle_full_moderate);
 
-    // Legacy proxy endpoints
-    router.post_async("/api/clip/classify", handle_proxy);
-    router.post_async("/api/clap/classify", handle_proxy);
-
-    // Health proxy for frontend compatibility
+    // Health (local — no upstream proxy needed for standalone Tier 2)
     router.get_async("/api/health", handle_api_health);
-
-    // Sample files proxy (frontend loads sample images/audio from backend)
-    router.get_async("/samples/*", handle_samples_proxy);
 
     router.any("/*", handle_not_found);
     router.handle_async(req).await
@@ -269,7 +261,9 @@ fn handle_moderate(req: Request, _params: Params) -> Result<impl IntoResponse> {
         Err(err) => return Ok(error_resp(&err, &rid, &cfg)),
     };
 
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
+    // Only load the Tract model when the request explicitly asks for ML scoring.
+    let classifier = if mod_req.ml { get_classifier() } else { None };
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, classifier);
     Ok(json_ok(&resp, &rid, &cfg))
 }
 
@@ -316,22 +310,23 @@ fn handle_moderate_cached(req: Request, _params: Params) -> Result<impl IntoResp
 }
 
 // ---------------------------------------------------------------------------
-// Mode 3: Full Pipeline (POST /api/clip/moderate)
+// Mode 3: Full Pipeline with local ML (POST /api/clip/moderate)
 //
-// 1. Parse multipart: extract user labels + image bytes
-// 2. Image blocklist: SHA-256 of image bytes checked against KV
-// 3. Pre-check: text policy on labels (prohibited terms, PII, injection)
-// 4. Safety labels: augment user labels with safety probes before inference
-// 5. Forward rebuilt multipart (image + augmented labels) to CLIP
-// 6. Post-check: evaluate safety scores + standard post-check
-// 7. Strip safety labels from response, cache verdict
-// 8. If blocked by safety, add image hash to blocklist for future instant-block
+// Runs the complete rules + Tract toxicity pipeline locally on Akamai
+// Functions. No Lambda call — this is Tier 2 standalone.
+//
+// Flow:
+//   1. Parse body (JSON or multipart); extract labels, text, optional image
+//   2. Image blocklist check (instant KV lookup)
+//   3. Rules pre-check; early-exit if blocked
+//   4. KV cache lookup; early-exit on hit
+//   5. Tract ML inference (model lazy-loads on first ML request via OnceLock)
+//   6. Cache verdict; add image to blocklist if blocked
 // ---------------------------------------------------------------------------
 
-async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl IntoResponse> {
+fn handle_full_moderate(req: Request, _params: Params) -> Result<impl IntoResponse> {
     let cfg = config();
     let rid = request_id();
-    let policy_config = PolicyConfig::default();
 
     let content_type = req
         .header("content-type")
@@ -341,7 +336,6 @@ async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl Into
 
     let raw_body = req.into_body();
 
-    // --- Extract labels and image bytes from multipart ---
     let labels = match extract_labels_from_body(&content_type, &raw_body) {
         Ok(l) => l,
         Err(msg) => {
@@ -358,7 +352,7 @@ async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl Into
     let img_bytes = extract_image_from_multipart(&content_type, &raw_body);
     let text_field = extract_text_from_body(&content_type, &raw_body);
 
-    // --- Image blocklist check ---
+    // Image blocklist check (SHA-256 of image bytes → KV)
     if let Some(ref bytes) = img_bytes {
         let img_hash = image_hash(bytes);
         if kv_is_blocklisted(&img_hash) {
@@ -368,14 +362,13 @@ async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl Into
     }
 
     let mod_req = ModerationRequest {
-        labels: labels.clone(),
+        labels,
         nonce: rid.clone(),
         text: text_field,
         ml: true,
     };
 
-    // --- Pre-moderation (text policy) ---
-    // Pre-check runs BEFORE cache lookup so policy changes take effect immediately
+    // Rules pre-check: fast early-exit before touching the ML model
     let pre = pipeline::pre_moderate(&mod_req, None);
 
     if pre.is_blocked() {
@@ -383,67 +376,35 @@ async fn handle_full_moderate(req: Request, _params: Params) -> Result<impl Into
         return Ok(json_ok(&resp, &rid, &cfg));
     }
 
-    // Cache check (label-only hash for cross-mode compatibility)
+    // KV cache lookup
     if let Some(cached) = kv_get(&pre.hash) {
         let resp = pipeline::moderate_cached(&mod_req, Some(&cached), &cfg, &rid, None);
         return Ok(json_ok(&resp, &rid, &cfg));
     }
 
-    // --- Augment labels with safety probes ---
-    let augmented_labels = policy_config.augment_labels(&labels);
+    // Full pipeline: rules + local Tract toxicity inference.
+    // get_classifier() loads the NNEF model once per warm instance (OnceLock).
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
 
-    // --- Build new multipart body with augmented labels ---
-    let (fwd_body, fwd_content_type) = if img_bytes.is_some() && content_type.contains("multipart") {
-        build_multipart_body(img_bytes.as_deref().unwrap(), &augmented_labels)
-    } else {
-        (raw_body, content_type.clone())
-    };
+    // Cache verdict
+    let cv = clipclap_gateway_core::cache::CachedVerdict::new(
+        pre.hash.clone(),
+        clipclap_gateway_core::policy::PolicyResult {
+            verdict: resp.verdict.clone(),
+            flags: vec![],
+            blocked_terms: resp.moderation.blocked_terms.clone(),
+            confidence: resp.moderation.confidence,
+            processing_ms: resp.moderation.processing_ms,
+        },
+        resp.classification.clone(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    );
+    kv_put(&pre.hash, &cv);
 
-    // --- Forward to inference ---
-    let inference_url = match variables::get("inference_url") {
-        Ok(url) => url,
-        Err(_) => {
-            let err = GatewayError::InternalError("INFERENCE_URL not configured".into());
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    let upstream_uri = format!("{}/api/clip/classify", inference_url.trim_end_matches('/'));
-
-    let outbound = Request::post(&upstream_uri, fwd_body)
-        .header("content-type", &fwd_content_type)
-        .header("x-request-id", &rid)
-        .build();
-
-    let upstream_resp: Response = match spin_sdk::http::send(outbound).await {
-        Ok(resp) => resp,
-        Err(_) => {
-            let err = GatewayError::UpstreamUnreachable("Failed to reach inference service".into());
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    let status = *upstream_resp.status();
-    let resp_body = upstream_resp.into_body();
-
-    let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
-    if let Err(err) = map_upstream_status(status, &body_preview) {
-        return Ok(error_resp(&err, &rid, &cfg));
-    }
-
-    let classification: ClassificationResponse = match serde_json::from_slice(&resp_body) {
-        Ok(c) => c,
-        Err(e) => {
-            let err = GatewayError::UpstreamError(Some(status), format!("Bad upstream JSON: {e}"));
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    // --- Post-moderation: evaluates safety scores + strips them from response ---
-    let (resp, cached_verdict) = pipeline::post_moderate(&pre, &classification, &cfg, &rid);
-    kv_put(&pre.hash, &cached_verdict);
-
-    // --- If blocked by content safety, add image to blocklist ---
+    // Add image to blocklist if this content is being blocked
     if resp.verdict == clipclap_gateway_core::policy::Verdict::Block {
         if let Some(ref bytes) = img_bytes {
             kv_blocklist_image(&image_hash(bytes));
@@ -503,32 +464,6 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Build a multipart/form-data body with image bytes and augmented labels.
-fn build_multipart_body(image_bytes: &[u8], labels: &[String]) -> (Vec<u8>, String) {
-    let boundary = format!("----GatewayBoundary{}", uuid::Uuid::new_v4().simple());
-    let labels_json = serde_json::to_string(labels).unwrap_or_default();
-
-    let mut body = Vec::new();
-
-    // Image part
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n");
-    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
-    body.extend_from_slice(image_bytes);
-    body.extend_from_slice(b"\r\n");
-
-    // Labels part
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"labels\"\r\n\r\n");
-    body.extend_from_slice(labels_json.as_bytes());
-    body.extend_from_slice(b"\r\n");
-
-    // Closing boundary
-    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-
-    let ct = format!("multipart/form-data; boundary={boundary}");
-    (body, ct)
-}
 
 /// Extract labels from either JSON body or multipart form data.
 fn extract_labels_from_body(content_type: &str, body: &[u8]) -> Result<Vec<String>, String> {
@@ -665,118 +600,6 @@ async fn handle_api_health(_req: Request, _params: Params) -> Result<impl IntoRe
     }
 }
 
-// ---------------------------------------------------------------------------
-// /samples/* — proxy to inference service for sample files
-// ---------------------------------------------------------------------------
-
-async fn handle_samples_proxy(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let cfg = config();
-    let rid = request_id();
-
-    let inference_url = match variables::get("inference_url") {
-        Ok(url) => url,
-        Err(_) => {
-            let err = GatewayError::InternalError("INFERENCE_URL not configured".into());
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    let path = req.path().to_string();
-    let upstream_uri = format!("{}{}", inference_url.trim_end_matches('/'), path);
-
-    let outbound = Request::get(&upstream_uri).build();
-
-    let upstream_resp: Result<Response, _> = spin_sdk::http::send(outbound).await;
-    match upstream_resp {
-        Ok(resp) => {
-            let status = *resp.status();
-            let ct: String = resp
-                .header("content-type")
-                .map(|v| v.as_str().unwrap_or("application/octet-stream").to_string())
-                .unwrap_or_else(|| "application/octet-stream".to_string());
-            let body = resp.into_body();
-            Ok(Response::builder()
-                .status(status)
-                .header("content-type", &ct)
-                .header("access-control-allow-origin", "*")
-                .body(body)
-                .build())
-        }
-        Err(_) => {
-            let err = GatewayError::UpstreamUnreachable("Failed to reach sample server".into());
-            Ok(error_resp(&err, &rid, &cfg))
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Legacy proxy handler (unchanged)
-// ---------------------------------------------------------------------------
-
-async fn handle_proxy(req: Request, _params: Params) -> Result<impl IntoResponse> {
-    let cfg = config();
-    let rid = request_id();
-
-    let inference_url = match variables::get("inference_url") {
-        Ok(url) => url,
-        Err(_) => {
-            let err = GatewayError::InternalError("INFERENCE_URL not configured".into());
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    let upstream_path = req.path().to_string();
-    let upstream_uri = format!(
-        "{}{}",
-        inference_url.trim_end_matches('/'),
-        upstream_path
-    );
-
-    let content_type = req
-        .header("content-type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("application/octet-stream")
-        .to_string();
-
-    let fwd_request_id = req
-        .header("x-request-id")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&rid)
-        .to_string();
-
-    let body = req.into_body();
-
-    let outbound = Request::post(&upstream_uri, body)
-        .header("content-type", &content_type)
-        .header("x-request-id", &fwd_request_id)
-        .build();
-
-    let upstream_resp: Response = match spin_sdk::http::send(outbound).await {
-        Ok(resp) => resp,
-        Err(_) => {
-            let err =
-                GatewayError::UpstreamUnreachable("Failed to reach inference service".into());
-            return Ok(error_resp(&err, &rid, &cfg));
-        }
-    };
-
-    let status = *upstream_resp.status();
-    let resp_body = upstream_resp.into_body();
-
-    let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
-    if let Err(err) = map_upstream_status(status, &body_preview) {
-        return Ok(error_resp(&err, &rid, &cfg));
-    }
-
-    Ok(Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .header("x-gateway-platform", &cfg.platform)
-        .header("x-gateway-region", &cfg.region)
-        .header("x-gateway-request-id", &rid)
-        .body(resp_body)
-        .build())
-}
 
 // ---------------------------------------------------------------------------
 // Catch-all
