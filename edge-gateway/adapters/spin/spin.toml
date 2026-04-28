@@ -1,9 +1,9 @@
 spin_manifest_version = 2
 
 [application]
-name = "wasm-prompt-firewall"
+name = "wasm-prompt-firewall-ml"
 version = "1.0.0"
-description = "WASM-Powered Content Moderation Gateway at the Edge"
+description = "WASM-Powered Content Moderation Gateway with embedded ML toxicity classifier (Tier 2)"
 
 [variables]
 inference_url = { default = "" }

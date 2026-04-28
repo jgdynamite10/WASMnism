@@ -70,7 +70,8 @@ stage-lambda-models:
 	cp models/toxicity/vocab.txt adapters/lambda/models/toxicity/
 
 deploy-lambda: build-frontend stage-lambda-models
-	cd adapters/lambda && cargo lambda deploy bootstrap \
+	cd adapters/lambda && cargo lambda deploy $${LAMBDA_FUNCTION_NAME:-wasmnism-tier2} \
+	  --binary-name bootstrap \
 	  --region $${AWS_REGION:-us-east-1} \
 	  --iam-role $${LAMBDA_ROLE:?Set LAMBDA_ROLE} \
 	  --timeout 30 \
