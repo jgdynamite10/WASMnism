@@ -86,7 +86,7 @@
 
         <div class="card info-card">
           <h3>About This Benchmark</h3>
-          <p class="info-desc">This gateway runs identically on Fermyon Cloud, Akamai Functions, Fastly Compute, Cloudflare Workers, and AWS Lambda. The scorecard measures overhead across all five platforms.</p>
+          <p class="info-desc">This gateway runs identically on Akamai Functions and AWS Lambda. The scorecard measures overhead across both platforms. To access the testing methodology and latest scorecard, <a href="https://github.com/jgdynamite/WASMnism/blob/rules-only/docs/benchmark_contract.md" target="_blank" rel="noopener noreferrer">click here</a>.</p>
           <div class="tech-pills">
             <span class="pill">Rust</span>
             <span class="pill">WASM</span>
@@ -319,6 +319,16 @@
     line-height: 1.6;
     color: #71717a;
     margin-bottom: 16px;
+  }
+
+  .info-desc a {
+    color: #6366f1;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .info-desc a:hover {
+    color: #818cf8;
   }
 
   .pipeline-list {
