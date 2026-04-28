@@ -85,9 +85,9 @@ deploy-lambda: build-frontend stage-lambda-models
 	  --s3-bucket $${LAMBDA_S3_BUCKET:?Set LAMBDA_S3_BUCKET} \
 	  --enable-function-url \
 	  --include models/toxicity \
-	  --env-var GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1} \
-	  --env-var GATEWAY_PLATFORM="AWS Lambda" \
-	  --env-var ML_MODEL_PATH=/var/task/models/toxicity
+	  --env-var "GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1}" \
+	  --env-var "GATEWAY_PLATFORM=AWS Lambda" \
+	  --env-var "ML_MODEL_PATH=/var/task/models/toxicity"
 	@FN=$${LAMBDA_FUNCTION_NAME:-wasmnism-tier2}; RG=$${AWS_REGION:-us-east-1}; \
 	  echo "Configuring Function URL for public access (auth-type NONE) on $$FN..."; \
 	  aws lambda update-function-url-config --function-name $$FN --region $$RG --auth-type NONE --output text >/dev/null; \
