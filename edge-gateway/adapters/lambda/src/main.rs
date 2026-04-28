@@ -187,7 +187,7 @@ async fn handler(req: Request, dynamo: &DynamoClient) -> Result<Response<Body>, 
         ("POST", "/gateway/moderate-cached") => Ok(handle_moderate_cached(&req, dynamo).await),
         ("POST", "/api/clip/moderate") => Ok(handle_full_moderate(&req, dynamo).await),
         ("POST", "/api/clip/classify") | ("POST", "/api/clap/classify") => {
-            Ok(handle_proxy(&req).await)
+            Ok(handle_clip_classify(&req))
         }
         ("GET", _) => Ok(handle_static(&path)),
         _ => Ok(handle_not_found()),
@@ -379,42 +379,51 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
         return json_ok(&resp, &rid, &cfg);
     }
 
-    let inference_url =
-        env::var("INFERENCE_URL").unwrap_or_else(|_| "http://localhost:8000".into());
-    let upstream_uri = format!("{}/api/clip/classify", inference_url.trim_end_matches('/'));
+    // Classification: call external INFERENCE_URL only when set (e.g. separate embedding service).
+    // Otherwise use deterministic mock scores (benchmark contract section 5.3) — same as handle_clip_classify.
+    let classification: ClassificationResponse =
+        match env::var("INFERENCE_URL") {
+            Ok(url) if !url.trim().is_empty() && url.trim() != "local" => {
+                let upstream_uri = format!("{}/api/clip/classify", url.trim_end_matches('/'));
+                let client = reqwest::Client::new();
+                let upstream_resp = match client
+                    .post(&upstream_uri)
+                    .header("content-type", &content_type)
+                    .header("x-request-id", &rid)
+                    .body(raw_body.clone())
+                    .send()
+                    .await
+                {
+                    Ok(resp) => resp,
+                    Err(_) => {
+                        let err = GatewayError::UpstreamUnreachable(
+                            "Failed to reach inference service".into(),
+                        );
+                        return error_resp(&err, &rid, &cfg);
+                    }
+                };
 
-    let client = reqwest::Client::new();
-    let upstream_resp = match client
-        .post(&upstream_uri)
-        .header("content-type", &content_type)
-        .header("x-request-id", &rid)
-        .body(raw_body)
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(_) => {
-            let err =
-                GatewayError::UpstreamUnreachable("Failed to reach inference service".into());
-            return error_resp(&err, &rid, &cfg);
-        }
-    };
+                let status = upstream_resp.status().as_u16();
+                let resp_body = upstream_resp.bytes().await.unwrap_or_default();
 
-    let status = upstream_resp.status().as_u16();
-    let resp_body = upstream_resp.bytes().await.unwrap_or_default();
+                let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
+                if let Err(err) = map_upstream_status(status, &body_preview) {
+                    return error_resp(&err, &rid, &cfg);
+                }
 
-    let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
-    if let Err(err) = map_upstream_status(status, &body_preview) {
-        return error_resp(&err, &rid, &cfg);
-    }
-
-    let classification: ClassificationResponse = match serde_json::from_slice(&resp_body) {
-        Ok(c) => c,
-        Err(e) => {
-            let err = GatewayError::UpstreamError(Some(status), format!("Bad upstream JSON: {e}"));
-            return error_resp(&err, &rid, &cfg);
-        }
-    };
+                match serde_json::from_slice(&resp_body) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let err = GatewayError::UpstreamError(
+                            Some(status),
+                            format!("Bad upstream JSON: {e}"),
+                        );
+                        return error_resp(&err, &rid, &cfg);
+                    }
+                }
+            }
+            _ => handlers::mock_classify(&mod_req.labels),
+        };
 
     let (resp, cached_verdict) = pipeline::post_moderate(&pre, &classification, &cfg, &rid);
     dynamo_put(dynamo, &pre.hash, &cached_verdict).await;
@@ -423,72 +432,36 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
 }
 
 // ---------------------------------------------------------------------------
-// Legacy proxy handler
+// POST /api/clip/classify — embedding-shaped scores for benchmarks (contract section 5.3)
 // ---------------------------------------------------------------------------
 
-async fn handle_proxy(req: &Request) -> Response<Body> {
+/// Akamai Spin forwards multipart here for clip flows. Respond directly (no second upstream hop).
+fn handle_clip_classify(req: &Request) -> Response<Body> {
     let cfg = config();
     let rid = request_id();
-
-    let inference_url =
-        env::var("INFERENCE_URL").unwrap_or_else(|_| "http://localhost:8000".into());
-    let path = req.uri().path();
-    let upstream_uri = format!("{}{}", inference_url.trim_end_matches('/'), path);
 
     let content_type = req
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream")
+        .unwrap_or("")
         .to_string();
 
-    let fwd_rid = req
-        .headers()
-        .get("x-request-id")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or(&rid)
-        .to_string();
-
-    let body = req.body().as_ref().to_vec();
-
-    let client = reqwest::Client::new();
-    let upstream_resp = match client
-        .post(&upstream_uri)
-        .header("content-type", &content_type)
-        .header("x-request-id", &fwd_rid)
-        .body(body)
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(_) => {
-            let err =
-                GatewayError::UpstreamUnreachable("Failed to reach inference service".into());
+    let raw_body = req.body().as_ref().to_vec();
+    let labels = match extract_labels_from_body(&content_type, &raw_body) {
+        Ok(l) => l,
+        Err(msg) => {
+            let err = GatewayError::BadRequest(msg);
             return error_resp(&err, &rid, &cfg);
         }
     };
 
-    let status = upstream_resp.status().as_u16();
-    let resp_body = upstream_resp.bytes().await.unwrap_or_default();
-
-    let body_preview = String::from_utf8_lossy(&resp_body[..resp_body.len().min(256)]);
-    if let Err(err) = map_upstream_status(status, &body_preview) {
+    if labels.is_empty() || labels.len() > 1000 {
+        let err = GatewayError::BadRequest("labels must contain 1-1000 items".into());
         return error_resp(&err, &rid, &cfg);
     }
 
-    Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .header("x-gateway-platform", &cfg.platform)
-        .header("x-gateway-region", &cfg.region)
-        .header("x-gateway-request-id", &rid)
-        .body(Body::Binary(resp_body.to_vec()))
-        .unwrap_or_else(|_| {
-            Response::builder()
-                .status(500)
-                .body(Body::Empty)
-                .unwrap()
-        })
+    json_ok(&handlers::mock_classify(&labels), &rid, &cfg)
 }
 
 // ---------------------------------------------------------------------------

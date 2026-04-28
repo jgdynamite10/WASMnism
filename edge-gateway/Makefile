@@ -38,11 +38,13 @@ deploy-spin:
 	  --variable "gateway_platform=Fermyon Cloud" \
 	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
 
+# Set INFERENCE_URL to your Lambda Function URL (HTTPS, no trailing path) so Spin can reach Tier 2 classify.
 deploy-akamai:
 	cd adapters/spin && \
 	spin aka deploy --no-confirm \
 	  --variable "gateway_platform=Akamai Functions" \
-	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
+	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}" \
+	  --variable "inference_url=$${INFERENCE_URL:-}"
 
 # ── Fastly Compute ───────────────────────────────────────────
 build-fastly: build-frontend
@@ -74,6 +76,7 @@ deploy-lambda: build-frontend stage-lambda-models
 	  --timeout 30 \
 	  --memory-size 512 \
 	  --s3-bucket $${LAMBDA_S3_BUCKET:?Set LAMBDA_S3_BUCKET} \
+	  --enable-function-url \
 	  --include models/toxicity \
 	  --env-var GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1} \
 	  --env-var GATEWAY_PLATFORM="AWS Lambda" \
