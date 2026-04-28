@@ -39,9 +39,11 @@ deploy-spin:
 	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
 
 # Set INFERENCE_URL to your Lambda Function URL (HTTPS, no trailing path) so Spin can reach Tier 2 classify.
+# Use AKA_APP_NAME=<name> on first deploy to a brand-new app; subsequent deploys reuse the .spin-aka link.
 deploy-akamai:
 	cd adapters/spin && \
 	spin aka deploy --no-confirm \
+	  $(if $(AKA_APP_NAME),--create-name "$(AKA_APP_NAME)",) \
 	  --variable "gateway_platform=Akamai Functions" \
 	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}" \
 	  --variable "inference_url=$${INFERENCE_URL:-}"
@@ -82,3 +84,16 @@ deploy-lambda: build-frontend stage-lambda-models
 	  --env-var GATEWAY_REGION=$${GATEWAY_REGION:-us-east-1} \
 	  --env-var GATEWAY_PLATFORM="AWS Lambda" \
 	  --env-var ML_MODEL_PATH=/var/task/models/toxicity
+	@FN=$${LAMBDA_FUNCTION_NAME:-wasmnism-tier2}; RG=$${AWS_REGION:-us-east-1}; \
+	  echo "Configuring Function URL for public access (auth-type NONE) on $$FN..."; \
+	  aws lambda update-function-url-config --function-name $$FN --region $$RG --auth-type NONE --output text >/dev/null; \
+	  aws lambda add-permission --function-name $$FN --region $$RG \
+	    --statement-id FunctionUrlAllowPublicAccess \
+	    --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE \
+	    --output text 2>/dev/null | head -1 || true; \
+	  aws lambda add-permission --function-name $$FN --region $$RG \
+	    --statement-id FunctionUrlAllowInvokeFunction \
+	    --action lambda:InvokeFunction --principal "*" \
+	    --output text 2>/dev/null | head -1 || true; \
+	  URL=$$(aws lambda get-function-url-config --function-name $$FN --region $$RG --query FunctionUrl --output text); \
+	  echo ""; echo "Function URL: $$URL"
