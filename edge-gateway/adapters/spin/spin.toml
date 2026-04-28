@@ -9,6 +9,10 @@ description = "WASM-Powered Content Moderation Gateway with embedded ML toxicity
 inference_url = { default = "" }
 gateway_platform = { default = "spin" }
 gateway_region = { default = "local" }
+# Set to "true" only for standalone deployments where Spin runs the
+# classifier locally (no Lambda backend). Defaults to "false" so the
+# model is never loaded when inference_url points to an external service.
+local_ml = { default = "false" }
 
 # --- API routes → gateway WASM ---
 
@@ -36,6 +40,7 @@ files = [{ source = "../../models/toxicity/", destination = "/models/toxicity" }
 inference_url = "{{ inference_url }}"
 gateway_platform = "{{ gateway_platform }}"
 gateway_region = "{{ gateway_region }}"
+local_ml = "{{ local_ml }}"
 
 [component.gateway.build]
 command = "cargo build --target wasm32-wasip1 --release --manifest-path ../../Cargo.toml -p clipclap-gateway-spin"

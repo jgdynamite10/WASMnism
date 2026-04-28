@@ -20,15 +20,31 @@ use clipclap_gateway_core::{
 };
 
 // ---------------------------------------------------------------------------
-// ML model loading (lazy, survives across warm-start requests)
+// ML model loading (lazy, gated by the `local_ml` Spin variable)
+//
+// Model loading is SKIPPED unless `local_ml = "true"` is explicitly set.
+// Default is "false" so that the standard Tier-2 deployment (Spin → Lambda
+// for inference) never pays the 50 MB disk-read + NNEF parse cost on each
+// cold-start invocation. Set `local_ml = "true"` only for standalone
+// deployments where Spin runs the classifier locally with no Lambda backend.
 // ---------------------------------------------------------------------------
 
 static CLASSIFIER: OnceLock<Option<ToxicityClassifier>> = OnceLock::new();
 static CLASSIFIER_ERROR: OnceLock<Option<String>> = OnceLock::new();
 
+fn local_ml_enabled() -> bool {
+    variables::get("local_ml")
+        .map(|v| v.eq_ignore_ascii_case("true") || v.trim() == "1")
+        .unwrap_or(false)
+}
+
 fn get_classifier() -> Option<&'static ToxicityClassifier> {
     CLASSIFIER
         .get_or_init(|| {
+            if !local_ml_enabled() {
+                let _ = CLASSIFIER_ERROR.set(Some("disabled (local_ml != true)".into()));
+                return None;
+            }
             let model_bytes = match std::fs::read("/models/toxicity/model.nnef.tar") {
                 Ok(b) => b,
                 Err(e) => {

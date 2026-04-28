@@ -43,6 +43,7 @@ deploy-spin:
 #   AKA_APP_NAME=<name>  -- create a brand-new app on first deploy
 #   AKA_APP_ID=<uuid>    -- deploy to a specific existing app (overrides .spin-aka link)
 # When neither is set, the workspace's .spin-aka link is used.
+# LOCAL_ML=true enables in-process Tract inference (no Lambda backend); default false.
 deploy-akamai:
 	cd adapters/spin && \
 	spin aka deploy --no-confirm \
@@ -50,6 +51,7 @@ deploy-akamai:
 	  $(if $(AKA_APP_ID),--app-id "$(AKA_APP_ID)",) \
 	  --variable "gateway_platform=Akamai Functions" \
 	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}" \
+	  --variable "local_ml=$${LOCAL_ML:-false}" \
 	  --variable "inference_url=$${INFERENCE_URL:-}"
 
 # ── Fastly Compute ───────────────────────────────────────────
