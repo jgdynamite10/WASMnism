@@ -310,17 +310,21 @@ fn handle_moderate_cached(req: Request, _params: Params) -> Result<impl IntoResp
 }
 
 // ---------------------------------------------------------------------------
-// Mode 3: Full Pipeline with local ML (POST /api/clip/moderate)
+// Mode 3: Full Pipeline with optional ML (POST /api/clip/moderate)
 //
-// Runs the complete rules + Tract toxicity pipeline locally on Akamai
-// Functions. No Lambda call — this is Tier 2 standalone.
+// Runs the complete rules + optional Tract toxicity pipeline locally on
+// Akamai Functions. No Lambda call — this is Tier 2 standalone.
+//
+// ML is conditional: the model is only loaded when the request carries
+// `"ml": true` (JSON) or when the body is multipart (image flows always
+// need ML). Omitting the field defaults to true for backward compatibility.
 //
 // Flow:
 //   1. Parse body (JSON or multipart); extract labels, text, optional image
 //   2. Image blocklist check (instant KV lookup)
 //   3. Rules pre-check; early-exit if blocked
 //   4. KV cache lookup; early-exit on hit
-//   5. Tract ML inference (model lazy-loads on first ML request via OnceLock)
+//   5. Conditionally run Tract ML inference (only when ml=true)
 //   6. Cache verdict; add image to blocklist if blocked
 // ---------------------------------------------------------------------------
 
@@ -361,11 +365,17 @@ fn handle_full_moderate(req: Request, _params: Params) -> Result<impl IntoRespon
         }
     }
 
+    // Read the `ml` flag from the request body.
+    // JSON bodies: honour the caller's `"ml"` field; default true so existing
+    // callers that omit the field still get ML inference.
+    // Multipart bodies (image flows): always true — image moderation needs ML.
+    let ml_requested = extract_ml_flag(&content_type, &raw_body);
+
     let mod_req = ModerationRequest {
         labels,
         nonce: rid.clone(),
         text: text_field,
-        ml: true,
+        ml: ml_requested,
     };
 
     // Rules pre-check: fast early-exit before touching the ML model
@@ -382,9 +392,12 @@ fn handle_full_moderate(req: Request, _params: Params) -> Result<impl IntoRespon
         return Ok(json_ok(&resp, &rid, &cfg));
     }
 
-    // Full pipeline: rules + local Tract toxicity inference.
-    // get_classifier() loads the NNEF model once per warm instance (OnceLock).
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
+    // Only load the Tract model when the request explicitly asks for ML.
+    // On Spin/WASM each invocation is a fresh instance so there is no
+    // warm-cache benefit between requests — skipping the model load on
+    // rules-only requests saves ~700 ms of disk-read + NNEF parse time.
+    let classifier = if mod_req.ml { get_classifier() } else { None };
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, classifier);
 
     // Cache verdict
     let cv = clipclap_gateway_core::cache::CachedVerdict::new(
@@ -543,6 +556,20 @@ fn extract_text_from_body(content_type: &str, body: &[u8]) -> Option<String> {
         None
     } else {
         None
+    }
+}
+
+/// Read the `ml` flag from the request body.
+/// JSON: returns the value of `"ml"` if present, otherwise `true` (opt-in default).
+/// Multipart: always `true` (image flows require ML).
+fn extract_ml_flag(content_type: &str, body: &[u8]) -> bool {
+    if content_type.contains("application/json") {
+        serde_json::from_slice::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("ml").and_then(|m| m.as_bool()))
+            .unwrap_or(true)
+    } else {
+        true
     }
 }
 

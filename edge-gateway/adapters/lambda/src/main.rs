@@ -373,11 +373,17 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
 
     let text_field = extract_text_from_body(&content_type, &raw_body);
 
+    // Read the `ml` flag from the request body.
+    // JSON bodies: honour the caller's `"ml"` field; default true so existing
+    // callers that omit the field still get ML inference.
+    // Multipart bodies (image flows): always true.
+    let ml_requested = extract_ml_flag(&content_type, &raw_body);
+
     let mod_req = ModerationRequest {
         labels,
         nonce: rid.clone(),
         text: text_field,
-        ml: true,
+        ml: ml_requested,
     };
 
     // Rules pre-check: fast early-exit before touching the ML model
@@ -394,9 +400,9 @@ async fn handle_full_moderate(req: &Request, dynamo: &DynamoClient) -> Response<
         return json_ok(&resp, &rid, &cfg);
     }
 
-    // Full pipeline: rules + local Tract toxicity inference.
-    // get_classifier() loads the NNEF model once per warm Lambda execution context (OnceLock).
-    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, get_classifier());
+    // Only load the Tract model when the request explicitly asks for ML.
+    let classifier = if mod_req.ml { get_classifier() } else { None };
+    let resp = pipeline::moderate_policy_only(&mod_req, &cfg, &rid, None, classifier);
 
     // Cache verdict to DynamoDB
     let cv = CachedVerdict::new(
@@ -604,6 +610,20 @@ fn extract_text_from_body(content_type: &str, body: &[u8]) -> Option<String> {
         None
     } else {
         None
+    }
+}
+
+/// Read the `ml` flag from the request body.
+/// JSON: returns the value of `"ml"` if present, otherwise `true` (opt-in default).
+/// Multipart bodies (image flows): always `true`.
+fn extract_ml_flag(content_type: &str, body: &[u8]) -> bool {
+    if content_type.contains("application/json") {
+        serde_json::from_slice::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("ml").and_then(|m| m.as_bool()))
+            .unwrap_or(true)
+    } else {
+        true
     }
 }
 
