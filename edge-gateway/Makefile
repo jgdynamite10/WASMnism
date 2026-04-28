@@ -30,9 +30,15 @@ run-spin:
 	SPIN_VARIABLE_GATEWAY_REGION=$${GATEWAY_REGION:-local} \
 	spin up
 
+# Targeting:
+#   AKA_APP_NAME=<name>  -- create a brand-new app on first deploy
+#   AKA_APP_ID=<uuid>    -- deploy to a specific existing app (overrides .spin-aka link)
+# When neither is set, the workspace's .spin-aka link is used.
 deploy-akamai:
 	cd adapters/spin && \
 	spin aka deploy --no-confirm \
+	  $(if $(AKA_APP_NAME),--create-name "$(AKA_APP_NAME)",) \
+	  $(if $(AKA_APP_ID),--app-id "$(AKA_APP_ID)",) \
 	  --variable "gateway_platform=Akamai Functions" \
 	  --variable "gateway_region=$${GATEWAY_REGION:-global (edge)}"
 
