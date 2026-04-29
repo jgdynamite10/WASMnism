@@ -4,14 +4,28 @@
 
 A portable WASM-powered content moderation gateway deployed as WebAssembly across three WASM-first edge platforms. Built to compare edge compute providers for a real-world workload.
 
-> **Status**: All three Tier 1 platforms are live and deployed.
+> **Status**: All three Tier 1 platforms are live and deployed. Tier 2 (ML inference) is live on Akamai Functions and AWS Lambda — see below.
 
-> For ML inference benchmarks (Tier 2: Akamai Functions vs AWS Lambda), see the `ml-inference` branch.
+### Tier 1 — WASM-first rules-only (this branch, `main`)
 
-**Live demos**:
+**Benchmark contract:** [docs/benchmark_contract.md](docs/benchmark_contract.md) (v3.4)
+
+**Live demos:**
 - Akamai Functions: [0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app](https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app/)
 - Fastly Compute: [morally-civil-urchin.edgecompute.app](https://morally-civil-urchin.edgecompute.app/)
 - Cloudflare Workers: [wasm-prompt-firewall.jgdynamite2000qx.workers.dev](https://wasm-prompt-firewall.jgdynamite2000qx.workers.dev/)
+
+### Tier 2 — ML inference at the edge (`ml-inference` branch)
+
+A second comparison runs the same gateway plus an embedded MiniLMv2 toxicity classifier (Tract NNEF) on **Akamai Functions** and **AWS Lambda**. The two platforms have fundamentally different ML cost curves (per-request WASM reload on Akamai vs warm-context model caching on Lambda), and the Tier 2 contract makes that asymmetry the headline finding rather than hiding it.
+
+**Benchmark contract:** [docs/benchmark_contract_tier2.md (on the `ml-inference` branch)](https://github.com/jgdynamite/WASMnism/blob/ml-inference/docs/benchmark_contract_tier2.md) (v1.0)
+
+**Live demos:**
+- Akamai Functions (ML): [f9318a6c-01e4-4f5b-995e-51894dfaf817.fwf.app](https://f9318a6c-01e4-4f5b-995e-51894dfaf817.fwf.app/)
+- AWS Lambda (ML): [xq3s7xb4umvrkbw3zywgfpotje0ajztu.lambda-url.us-east-1.on.aws](https://xq3s7xb4umvrkbw3zywgfpotje0ajztu.lambda-url.us-east-1.on.aws/)
+
+To browse the Tier 2 source, switch the branch dropdown at the top of this page to `ml-inference`.
 
 ---
 

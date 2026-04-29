@@ -1,4 +1,4 @@
-.PHONY: prereqs build build-frontend deploy-akamai deploy-fastly deploy-workers test clean validate benchmark bench-multiregion bench-full scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down gcp-runners-up gcp-runners-status gcp-runners-sync gcp-runners-down help
+.PHONY: prereqs build build-frontend deploy-akamai deploy-fastly deploy-workers test clean validate benchmark bench-multiregion bench-full scorecard report security-check install-hooks cleanup-stale runners-up runners-status runners-sync runners-down gcp-runners-up gcp-runners-status gcp-runners-sync gcp-runners-down push-all sync-org help
 
 # Default gateway URL (override with URL=...)
 URL ?= https://0ae93a16-62c9-44cc-8a2b-23f7c6b9bae1.fwf.app
@@ -134,6 +134,39 @@ install-hooks:
 cleanup-stale:
 	./bench/cleanup-stale.sh
 
+# ── Mirror policy: keep `org` and `origin` in sync ─────────────
+# Policy: `org` (jgdynamite10/WASMnism) is a mandatory mirror of `origin`
+# (jgdynamite/WASMnism). Every push to `origin` MUST be followed by a push
+# to `org`. Use `make push-all` instead of `git push` whenever practical.
+#
+# `make push-all`  pushes the current branch to both remotes.
+# `make sync-org`  brings `org` up to date with `origin` for main +
+#                  ml-inference (use after a peer pushes to origin without
+#                  remembering to mirror).
+
+push-all:
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	echo "=== Pushing $$branch to origin ==="; \
+	git push origin "$$branch"; \
+	echo ""; \
+	echo "=== Pushing $$branch to org (mirror) ==="; \
+	git push org "$$branch"
+
+sync-org:
+	@echo "=== Fast-forwarding org/main to match origin/main ==="
+	git fetch origin main
+	git push org refs/remotes/origin/main:refs/heads/main
+	@echo ""
+	@echo "=== Fast-forwarding org/ml-inference to match origin/ml-inference ==="
+	git fetch origin ml-inference
+	git push org refs/remotes/origin/ml-inference:refs/heads/ml-inference
+	@echo ""
+	@echo "=== Verification ==="
+	@printf "origin: "; git ls-remote origin main      | awk '{print $$1}' | tr -d '\n'; printf "  (main)\n"
+	@printf "org:    "; git ls-remote org    main      | awk '{print $$1}' | tr -d '\n'; printf "  (main)\n"
+	@printf "origin: "; git ls-remote origin ml-inference | awk '{print $$1}' | tr -d '\n'; printf "  (ml-inference)\n"
+	@printf "org:    "; git ls-remote org    ml-inference | awk '{print $$1}' | tr -d '\n'; printf "  (ml-inference)\n"
+
 # ── Help ─────────────────────────────────────────────────────
 help:
 	@echo "WASMnism — WASM Edge Gateway Benchmark"
@@ -177,3 +210,7 @@ help:
 	@echo "  make security-check                  Scan tracked files for secrets/IPs/PII"
 	@echo "  make install-hooks                   Install pre-push security hook"
 	@echo "  make cleanup-stale                   List stale result directories"
+	@echo ""
+	@echo "Git mirror (origin → org always in sync):"
+	@echo "  make push-all                        Push current branch to BOTH origin and org"
+	@echo "  make sync-org                        Bring org up to date with origin (main + ml-inference)"
